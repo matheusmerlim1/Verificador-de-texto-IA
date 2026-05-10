@@ -1,87 +1,56 @@
-# Detector de Texto IA
+# Detector de Texto IA — Versão Estática
 
-Ferramenta web para detectar se um texto foi escrito por IA ou por humano,
+Ferramenta para detectar se um texto foi escrito por IA ou humano,
 usando análise linguística via Claude (Anthropic).
 
-## Como funciona
+**Versão 100% estática** — sem servidor, sem backend.
+Funciona em qualquer hospedagem de arquivos estáticos.
 
-O frontend envia o texto para um servidor Node.js local (`/api/analyze`).
-O servidor repassa para a API da Anthropic com a chave guardada no `.env` —
-a chave **nunca fica exposta no navegador**.
-
-## Estrutura
+## Arquivos
 
 ```
 detector-ia/
-├── public/
-│   ├── index.html      ← HTML puro, sem lógica
-│   ├── css/
-│   │   └── style.css   ← Toda a estilização
-│   └── js/
-│       └── app.js      ← Lógica do cliente (chama /api/analyze)
-├── src/
-│   └── server.js       ← Servidor Express + proxy para a API
-├── .env.example        ← Modelo de configuração
-├── .gitignore
-└── package.json
+├── index.html   ← Estrutura HTML
+├── style.css    ← Estilos
+├── app.js       ← Toda a lógica (chamada à API, UI)
+└── README.md
 ```
 
-## Instalação e uso
+## Como usar localmente
 
-### 1. Clone e instale
+Basta abrir o `index.html` em qualquer servidor HTTP local.
+**Não funciona via `file://`** por restrições de CORS do browser.
 
 ```bash
-git clone https://github.com/seu-usuario/detector-ia.git
-cd detector-ia
-npm install
+# Com Python
+python3 -m http.server 8080
+
+# Com Node.js (npx)
+npx serve .
+
+# Acesse: http://localhost:8080
 ```
 
-### 2. Configure a chave da API
+## Deploy no GitHub Pages
 
-```bash
-cp .env.example .env
-```
+1. Crie um repositório no GitHub
+2. Faça upload dos três arquivos (`index.html`, `style.css`, `app.js`)
+3. Vá em **Settings → Pages → Deploy from branch → main**
+4. Acesse: `https://seu-usuario.github.io/nome-do-repo`
 
-Edite o `.env` e adicione sua chave:
+## Chave da API
 
-```
-ANTHROPIC_API_KEY=sk-ant-api03-...
-```
+A chave é inserida pelo usuário diretamente na interface e salva
+no `localStorage` do navegador — não vai para nenhum servidor externo.
 
-Obtenha sua chave em [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys).
-
-### 3. Inicie o servidor
-
-```bash
-npm start
-```
-
-Acesse em [http://localhost:3000](http://localhost:3000).
-
-### Modo desenvolvimento (auto-reload)
-
-```bash
-npm run dev
-```
-
-## Deploy (opcional)
-
-Para subir em produção, qualquer plataforma que suporte Node.js funciona:
-**Railway, Render, Fly.io, VPS**.
-
-Defina a variável de ambiente `ANTHROPIC_API_KEY` no painel da plataforma —
-nunca commite o `.env` real no repositório.
+Obtenha sua chave em: https://console.anthropic.com/settings/keys
 
 ## Indicadores analisados
 
-| Indicador | O que detecta |
+| Indicador | Sinal |
 |---|---|
-| Previsibilidade Lexical | Vocabulário muito uniforme e "seguro" → IA |
-| Uniformidade de Frases | Comprimento de frases muito homogêneo → IA |
-| Marcadores de Oralidade | Gírias, contrações, erros leves → Humano |
-| Hedging e Disclaimers | Excesso de "é importante notar" → IA |
-| Experiência Pessoal | Anedotas específicas, emoções genuínas → Humano |
-
-## Observação
-
-Nenhum detector é 100% preciso. Use como referência complementar.
+| Previsibilidade Lexical | Vocabulário uniforme → IA |
+| Uniformidade de Frases | Comprimento homogêneo → IA |
+| Marcadores de Oralidade | Gírias, erros leves → Humano |
+| Hedging e Disclaimers | "é importante notar" → IA |
+| Experiência Pessoal | Contexto situado → Humano |
