@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detector de Texto IA</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div>
+    <div class="header-sub">Ferramenta de Análise</div>
+    <div class="header-title">Detector de Texto IA</div>
+  </div>
+  <div class="header-badge">POWERED BY CLAUDE · ANTHROPIC</div>
+</header>
+
+<!-- ── Status bar ── -->
+<div class="status-bar">
+  <div class="status-dot" id="status-dot"></div>
+  <span class="status-text" id="status-text">Verificando conexão...</span>
+</div>
+
+<!-- ── Layout principal ── -->
+<main>
+
+  <!-- Coluna esquerda: input -->
+  <div class="input-side">
+
+    <div>
+      <div class="field-label">Texto para análise</div>
+      <textarea
+        id="txt"
+        placeholder="Cole aqui o texto que deseja analisar. Recomendado: mínimo 100 palavras para maior precisão..."
+      ></textarea>
+    </div>
+
+    <div class="controls">
+      <span class="word-count">palavras: <span id="wc">0</span></span>
+      <button class="btn btn-ghost" id="btn-clear">Limpar</button>
+      <button class="btn btn-primary" id="btn-analyze" disabled>
+        🔍 Analisar
+      </button>
+    </div>
+
+    <div>
+      <div class="field-label">Exemplos rápidos</div>
+      <div class="examples">
+        <div class="example-chip" data-id="human">✍️ Texto humano</div>
+        <div class="example-chip" data-id="ai">🤖 Texto de IA</div>
+        <div class="example-chip" data-id="academic">📄 Acadêmico</div>
+        <div class="example-chip" data-id="mixed">🔀 Misto</div>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      ⚠️ Esta ferramenta utiliza análise linguística via IA para estimar a probabilidade
+      de autoria artificial. Nenhum detector é 100% preciso. Use como referência
+      complementar, não como prova definitiva.
+    </div>
+
+  </div><!-- /input-side -->
+
+  <!-- Coluna direita: resultado -->
+  <div class="result-side">
+
+    <!-- Estado vazio -->
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🔬</div>
+      <div class="empty-title">Nenhum texto analisado</div>
+      <div class="empty-sub">
+        Cole um texto ao lado e clique em "Analisar" para verificar a autoria.
+      </div>
+    </div>
+
+    <!-- Carregando -->
+    <div class="loading-state" id="loading-state">
+      <div class="loading-dots">
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+      </div>
+      <div class="loading-text" id="loading-msg">ANALISANDO PADRÕES LINGUÍSTICOS...</div>
+    </div>
+
+    <!-- Gauge de probabilidade -->
+    <div class="gauge-wrap" id="gauge-wrap">
+      <div class="gauge-label">Probabilidade de autoria por IA</div>
+      <div class="gauge-score" id="gauge-score">—</div>
+      <div class="gauge-verdict" id="gauge-verdict">—</div>
+      <div class="gauge-bar-track">
+        <div class="gauge-bar-fill" id="gauge-fill" style="width:0%"></div>
+      </div>
+      <div class="gauge-scale">
+        <span>Humano</span>
+        <span>Incerto</span>
+        <span>IA</span>
+      </div>
+    </div>
+
+    <!-- Indicadores linguísticos -->
+    <div class="indicators" id="indicators">
+      <div class="ind-label">Indicadores linguísticos</div>
+      <div id="ind-list"></div>
+    </div>
+
+    <!-- Análise detalhada -->
+    <div class="analysis-box" id="analysis-box">
+      <div class="ind-label">Análise detalhada</div>
+      <div class="analysis-text" id="analysis-text"></div>
+    </div>
+
+  </div><!-- /result-side -->
+
+</main>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
