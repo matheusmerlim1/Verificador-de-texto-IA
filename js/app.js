@@ -1,22 +1,14 @@
 /**
- * app.js — Detector de Texto IA
+ * app.js — Modo "Texto"
  *
- * Chama a API da Anthropic diretamente do browser.
- * A chave é salva no localStorage do usuário — nunca vai para nenhum servidor externo.
+ * Detecta probabilidade de autoria por IA em texto corrido e, diferente do
+ * modo "Código", permite REESCREVER o texto para reduzir os marcadores
+ * de geração automática, com reanálise imediata do resultado.
  *
- * Requer o header:  anthropic-dangerous-direct-browser-access: true
- * (obrigatório para chamadas diretas do browser pela Anthropic)
+ * Depende de core.js (App, callClaude, helpers).
  */
 
 'use strict';
-
-// ════════════════════════════════════════════════
-//  CONSTANTES
-// ════════════════════════════════════════════════
-const API_URL     = 'https://api.anthropic.com/v1/messages';
-const MODEL       = 'claude-sonnet-4-20250514';
-const LS_KEY      = 'dlm_anthropic_key';
-const MIN_WORDS   = 20;
 
 // ════════════════════════════════════════════════
 //  EXEMPLOS
@@ -31,58 +23,12 @@ const EXAMPLES = {
   mixed: `Quando comecei a estudar blockchain achei muito complicado, mas depois fui entendendo melhor. A tecnologia de contratos inteligentes permite que as transações sejam executadas de forma automática e transparente, eliminando a necessidade de intermediários. Isso é muito útil pra revenda de ebooks, por exemplo. O sistema que a gente desenvolveu funciona assim: o arquivo fica criptografado e só abre se a blockchain confirmar que você é o dono. Testamos em rede local e funcionou bem, com latência em torno de 1,2 segundos.`,
 };
 
-// ════════════════════════════════════════════════
-//  ESTADO
-// ════════════════════════════════════════════════
-let apiKey = localStorage.getItem(LS_KEY) || '';
-
-// ════════════════════════════════════════════════
-//  UTILITÁRIOS DOM
-// ════════════════════════════════════════════════
-const $ = id => document.getElementById(id);
-
-function show(id, display = 'block') {
-  const el = $(id);
-  if (el) el.style.display = display;
-}
-function hide(id) { show(id, 'none'); }
-
-function escHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// ════════════════════════════════════════════════
-//  API KEY — carregamento e validação
-// ════════════════════════════════════════════════
-function initApiKey() {
-  const input  = $('api-key-input');
-  const badge  = $('api-key-badge');
-  const btnAna = $('btn-analyze');
-
-  // Preenche do localStorage
-  if (apiKey) {
-    input.value = apiKey;
-    setKeyStatus(apiKey);
-  }
-
-  input.addEventListener('input', () => {
-    apiKey = input.value.trim();
-    localStorage.setItem(LS_KEY, apiKey);
-    setKeyStatus(apiKey);
-    updateAnalyzeBtn();
-  });
-
-  function setKeyStatus(key) {
-    const ok = key.startsWith('sk-ant') && key.length > 20;
-    badge.className  = 'apikey-badge ' + (key ? (ok ? 'ok' : 'err') : 'idle');
-    badge.textContent = key
-      ? (ok ? '✅ Chave válida — salva no navegador' : '❌ Formato inválido')
-      : 'Aguardando chave';
-    input.className  = 'apikey-input ' + (key && ok ? 'valid' : '');
-  }
-}
+/** Última análise, usada para comparar antes/depois da reescrita. */
+const TextState = {
+  lastScore: null,
+  original: '',
+  forensics: null,
+};
 
 // ════════════════════════════════════════════════
 //  TEXTAREA — contagem de palavras
@@ -92,31 +38,32 @@ function initTextarea() {
   const wcEl  = $('wc');
 
   txtEl.addEventListener('input', () => {
-    const words = txtEl.value.trim().split(/\s+/).filter(Boolean).length;
-    wcEl.textContent = words;
+    wcEl.textContent = countWords(txtEl.value);
     updateAnalyzeBtn();
   });
 
   $('btn-clear').addEventListener('click', () => {
     txtEl.value = '';
     wcEl.textContent = '0';
+    TextState.lastScore = null;
+    TextState.original = '';
     updateAnalyzeBtn();
     resetUI();
   });
+
+  document.addEventListener('apikeychange', updateAnalyzeBtn);
 }
 
 function updateAnalyzeBtn() {
-  const txt   = $('txt').value.trim();
-  const words = txt.split(/\s+/).filter(Boolean).length;
-  const keyOk = apiKey.startsWith('sk-ant') && apiKey.length > 20;
-  $('btn-analyze').disabled = !(words >= MIN_WORDS && keyOk);
+  const words = countWords($('txt').value);
+  $('btn-analyze').disabled = !(words >= MIN_WORDS && App.keyOk);
 }
 
 // ════════════════════════════════════════════════
 //  EXEMPLOS
 // ════════════════════════════════════════════════
 function initExamples() {
-  document.querySelectorAll('.example-chip').forEach(chip => {
+  $$('.example-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       $('txt').value = EXAMPLES[chip.dataset.id] || '';
       $('txt').dispatchEvent(new Event('input'));
@@ -125,14 +72,17 @@ function initExamples() {
 }
 
 // ════════════════════════════════════════════════
-//  UI HELPERS
+//  UI
 // ════════════════════════════════════════════════
 function resetUI() {
-  show('empty-state',   'flex');
+  show('empty-state', 'flex');
   hide('loading-state');
   hide('gauge-wrap');
   hide('indicators');
   hide('analysis-box');
+  hide('rewrite-box');
+  hide('text-actions');
+  hide('trace-box');
 }
 
 function showLoading(msg = 'ANALISANDO PADRÕES LINGUÍSTICOS...') {
@@ -142,6 +92,7 @@ function showLoading(msg = 'ANALISANDO PADRÕES LINGUÍSTICOS...') {
   hide('gauge-wrap');
   hide('indicators');
   hide('analysis-box');
+  hide('text-actions');
 }
 
 function showError(msg) {
@@ -149,35 +100,32 @@ function showError(msg) {
   $('loading-msg').innerHTML = `<span style="color:var(--accent)">❌ ${escHtml(msg)}</span>`;
 }
 
-function getColor(score) {
-  if (score <= 30) return '#27ae60';
-  if (score <= 55) return '#e67e22';
-  return '#c0392b';
-}
-
-function getVerdict(score) {
-  if (score <= 20) return { label: 'PROVAVELMENTE HUMANO',  color: '#27ae60' };
-  if (score <= 40) return { label: 'INDICADORES HUMANOS',   color: '#2ecc71' };
-  if (score <= 60) return { label: 'INCONCLUSIVO',          color: '#e67e22' };
-  if (score <= 80) return { label: 'INDICADORES DE IA',     color: '#e67e22' };
-  return                  { label: 'PROVAVELMENTE IA',      color: '#c0392b' };
-}
-
 function showResults(data) {
   hide('loading-state');
 
   // ── Gauge ──
   show('gauge-wrap', 'block');
-  const { score } = data;
+  const score   = Math.round(data.score);
   const color   = getColor(score);
   const verdict = getVerdict(score);
 
-  $('gauge-score').textContent    = score + '%';
-  $('gauge-score').style.color    = color;
-  $('gauge-verdict').textContent  = verdict.label;
-  $('gauge-verdict').style.color  = verdict.color;
+  $('gauge-score').textContent   = score + '%';
+  $('gauge-score').style.color   = color;
+  $('gauge-verdict').textContent = verdict.label;
+  $('gauge-verdict').style.color = verdict.color;
 
-  // Anima a barra depois de um tick para o CSS transition funcionar
+  // Comparação com a análise anterior (útil após uma reescrita)
+  const delta = $('gauge-delta');
+  if (TextState.lastScore !== null && TextState.lastScore !== score) {
+    const d = score - TextState.lastScore;
+    delta.textContent = `${d > 0 ? '▲' : '▼'} ${Math.abs(d)} pontos em relação à análise anterior (${TextState.lastScore}%)`;
+    delta.style.color = d < 0 ? 'var(--green)' : 'var(--accent)';
+    delta.style.display = 'block';
+  } else {
+    delta.style.display = 'none';
+  }
+  TextState.lastScore = score;
+
   requestAnimationFrame(() => {
     $('gauge-fill').style.width      = score + '%';
     $('gauge-fill').style.background = color;
@@ -206,7 +154,6 @@ function showResults(data) {
     indList.appendChild(el);
   });
 
-  // Anima mini-barras
   requestAnimationFrame(() => {
     indList.querySelectorAll('.ind-mini-fill').forEach(el => {
       el.style.width = el.dataset.w + '%';
@@ -216,13 +163,81 @@ function showResults(data) {
   // ── Análise ──
   show('analysis-box', 'block');
   $('analysis-text').textContent = data.analysis || '';
+
+  // ── Sugestões de alteração ──
+  const sugg = $('text-suggestions');
+  if (Array.isArray(data.suggestions) && data.suggestions.length) {
+    sugg.innerHTML =
+      '<div class="ind-label">O que alterar para reduzir o percentual</div>' +
+      data.suggestions.map(s => `<div class="text-sugg">• ${escHtml(s)}</div>`).join('');
+    sugg.style.display = 'block';
+  } else {
+    sugg.style.display = 'none';
+  }
+
+  // ── Ações ──
+  show('text-actions', 'flex');
+  $('btn-rewrite').disabled = score < 25;
+  $('btn-rewrite').title = score < 25
+    ? 'O texto já apresenta marcadores humanos — reescrita desnecessária.'
+    : 'Gerar versão reescrita com menos marcadores de IA';
 }
 
 // ════════════════════════════════════════════════
-//  PROMPT
+//  PROMPTS
 // ════════════════════════════════════════════════
-function buildPrompt(text) {
+/** Renderiza o painel de rastros técnicos (determinístico, roda sem API). */
+function showTraces(f) {
+  const box = $('trace-box');
+  if (!f.traces.length && !(f.english && f.english.issues.length)) {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = 'block';
+
+  const badge = f.conclusive
+    ? '<span class="trace-verdict conclusive">RASTRO MATERIAL ENCONTRADO</span>'
+    : '<span class="trace-verdict">vestígios, nenhum conclusivo</span>';
+
+  const rows = f.traces.map(t => `
+    <div class="trace sev-${escHtml(t.severity)}">
+      <div class="trace-top">
+        <span class="trace-name">${escHtml(t.name)}</span>
+        <span class="trace-count">${t.count}×${t.line ? ' · linha ' + t.line : ''}</span>
+      </div>
+      <div class="trace-note">${escHtml(t.note)}</div>
+    </div>`).join('');
+
+  const eng = f.english && f.english.issues.length ? `
+    <div class="trace-eng">
+      <div class="ind-label">Padrões em inglês — motor avoid-ai-writing (${f.english.score}/100, ${escHtml(f.english.label)})</div>
+      ${f.english.issues.map(i =>
+        `<span class="tag" title="${escHtml(i.label)}">${escHtml(i.text || i.label)}</span>`).join(' ')}
+    </div>` : '';
+
+  box.innerHTML =
+    `<div class="rw-head"><div class="ind-label" style="margin:0">Rastros técnicos</div>${badge}</div>` +
+    `<div class="trace-summary">${escHtml(f.summary)}</div>` +
+    rows + eng;
+}
+
+/** Resumo dos rastros para injetar no prompt, ancorando a análise em fatos. */
+function tracesBrief(f) {
+  if (!f.traces.length) return 'Varredura local: nenhum rastro tecnico encontrado.';
+  const linhas = f.traces.map(t =>
+    `- ${t.name}: ${t.count} ocorrencia(s)${t.line ? ` (1a na linha ${t.line})` : ''}`);
+  const aviso = f.conclusive
+    ? '\nAO MENOS UM DESTES E MATERIAL, NAO ESTATISTICO.'
+    : '';
+  return 'Varredura local deterministica encontrou:\n' + linhas.join('\n') + aviso;
+}
+
+function buildPrompt(text, forensics) {
   return `Você é um especialista em linguística computacional e detecção de texto gerado por IA. Analise o texto abaixo e determine a probabilidade de ter sido escrito por uma IA (como ChatGPT, Claude, Gemini, etc.) versus um humano.
+
+EVIDÊNCIA TÉCNICA JÁ COLETADA (varredura local, determinística):
+${tracesBrief(forensics)}
+Use isso como âncora factual. Rastro material (caractere invisível, homóglifo, assinatura de ferramenta) vale mais que qualquer impressão estilística.
 
 Texto a analisar:
 """
@@ -246,62 +261,19 @@ Responda APENAS com um JSON válido neste formato exato (sem markdown, sem texto
     { "name": "Hedging e Disclaimers",    "score": <0-100>, "description": "<1-2 frases>" },
     { "name": "Experiência Pessoal",      "score": <0-100>, "description": "<1-2 frases>" }
   ],
-  "analysis": "<parágrafo de 3-5 frases em português explicando os principais sinais que levaram à conclusão>"
+  "analysis": "<parágrafo de 3-5 frases em português explicando os principais sinais que levaram à conclusão>",
+  "suggestions": ["<3 a 5 alterações concretas que reduziriam os marcadores de IA neste texto específico, citando trechos>"]
 }`;
 }
 
 // ════════════════════════════════════════════════
-//  CHAMADA À API
-// ════════════════════════════════════════════════
-async function callAPI(text) {
-  const response = await fetch(API_URL, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'x-api-key':     apiKey,
-      'anthropic-version': '2023-06-01',
-      // Header obrigatório para chamadas diretas do browser
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model:      MODEL,
-      max_tokens: 1024,
-      messages:   [{ role: 'user', content: buildPrompt(text) }],
-    }),
-  });
-
-  if (!response.ok) {
-    let detail = '';
-    try {
-      const err = await response.json();
-      detail = err?.error?.message || '';
-    } catch (_) {}
-
-    if (response.status === 401) throw new Error('Chave de API inválida ou sem permissão. Verifique em console.anthropic.com.');
-    if (response.status === 429) throw new Error('Limite de requisições atingido. Aguarde um momento e tente novamente.');
-    throw new Error(`Erro da API (${response.status})${detail ? ': ' + detail : ''}`);
-  }
-
-  const data  = await response.json();
-  const raw   = data.content?.[0]?.text?.trim() ?? '';
-  const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-
-  try {
-    return JSON.parse(clean);
-  } catch {
-    console.error('[parse error] resposta bruta:', raw);
-    throw new Error('Resposta da IA não pôde ser interpretada. Tente novamente.');
-  }
-}
-
-// ════════════════════════════════════════════════
-//  BOTÃO ANALISAR
+//  ANALISAR
 // ════════════════════════════════════════════════
 function initAnalyzeButton() {
   $('btn-analyze').addEventListener('click', async () => {
     const text = $('txt').value.trim();
-    if (!text || text.split(/\s+/).filter(Boolean).length < MIN_WORDS) return;
-    if (!apiKey.startsWith('sk-ant')) {
+    if (countWords(text) < MIN_WORDS) return;
+    if (!App.keyOk) {
       showError('Insira uma chave de API válida antes de analisar.');
       return;
     }
@@ -309,19 +281,119 @@ function initAnalyzeButton() {
     const btn = $('btn-analyze');
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span> Analisando...';
+    hide('rewrite-box');
     showLoading();
 
     try {
-      const result = await callAPI(text);
+      TextState.original = text;
+      // Varredura local primeiro: é instantânea, gratuita e não depende da API.
+      const forensics = runForensics(text, { mode: 'text' });
+      TextState.forensics = forensics;
+      const result = await callClaudeJSON(buildPrompt(text, forensics), { maxTokens: 1500 });
       showResults(result);
+      showTraces(forensics);
     } catch (err) {
       showError(err.message);
       console.error('[analyze]', err);
     }
 
-    btn.disabled = false;
     btn.innerHTML = '🔍 Analisar';
     updateAnalyzeBtn();
+  });
+}
+
+// ════════════════════════════════════════════════
+//  REESCREVER
+// ════════════════════════════════════════════════
+function initRewriteButton() {
+  $('btn-rewrite').addEventListener('click', async () => {
+    const text = $('txt').value.trim();
+    if (countWords(text) < MIN_WORDS || !App.keyOk) return;
+
+    const btn = $('btn-rewrite');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Reescrevendo...';
+
+    try {
+      const tone   = $('rewrite-tone').value;
+      const sample = $('voice-sample').value;
+      const res = await callClaudeJSON(
+        buildHumanizePrompt(text, tone, TextState.forensics, sample),
+        { maxTokens: 4000 });
+
+      // Garantia final: nenhum caractere invisivel sobrevive a reescrita,
+      // mesmo que o modelo tenha deixado passar.
+      const limpo = stripInvisible(res.rewritten || '');
+
+      show('rewrite-box', 'block');
+      $('rewrite-text').textContent = limpo;
+
+      // Reexecuta a varredura sobre o resultado, para mostrar o que sobrou.
+      const pos = runForensics(limpo, { mode: 'text' });
+      $('rewrite-audit').innerHTML = pos.traces.length
+        ? `<div class="ind-label">Auditoria da reescrita</div><div class="rw-audit warn">` +
+          `Ainda restam ${pos.traces.length} vestigio(s): ` +
+          pos.traces.map(t => escHtml(t.name)).join(', ') + '</div>'
+        : '<div class="ind-label">Auditoria da reescrita</div>' +
+          '<div class="rw-audit ok">Nenhum rastro tecnico restante na versao reescrita.</div>';
+
+      const marked = (res.marked || []).map(m => `<li>${escHtml(m)}</li>`).join('');
+      $('rewrite-marked').innerHTML = marked
+        ? `<details class="rw-marked"><summary>Padroes marcados (${res.marked.length})</summary>` +
+          `<ul class="rw-list">${marked}</ul></details>`
+        : '';
+
+      const kept = (res.kept || []).map(k => `<li>${escHtml(k)}</li>`).join('');
+      $('rewrite-kept').innerHTML = kept
+        ? `<div class="ind-label">Preservado de proposito</div><ul class="rw-list">${kept}</ul>`
+        : '';
+
+      const changes = (res.changes || []).map(c => `<li>${escHtml(c)}</li>`).join('');
+      $('rewrite-changes').innerHTML = changes
+        ? `<div class="ind-label">Mudanças aplicadas</div><ul class="rw-list">${changes}</ul>`
+        : '';
+
+      const warns = (res.warnings || []).map(w => `<li>${escHtml(w)}</li>`).join('');
+      $('rewrite-warnings').innerHTML = warns
+        ? `<div class="ind-label">Pontos que exigem sua revisão</div><ul class="rw-list warn">${warns}</ul>`
+        : '';
+
+      $('rewrite-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      showError(err.message);
+      console.error('[rewrite]', err);
+    }
+
+    btn.innerHTML = '✍️ Reescrever para reduzir IA';
+    btn.disabled = false;
+  });
+
+  // Substitui o texto original pela versão reescrita e reanalisa
+  $('btn-apply-rewrite').addEventListener('click', () => {
+    const rewritten = $('rewrite-text').textContent;
+    if (!rewritten) return;
+    $('txt').value = rewritten;
+    $('txt').dispatchEvent(new Event('input'));
+    hide('rewrite-box');
+    $('btn-analyze').click();
+  });
+
+  $('btn-copy-rewrite').addEventListener('click', async () => {
+    const btn = $('btn-copy-rewrite');
+    try {
+      await navigator.clipboard.writeText($('rewrite-text').textContent);
+      btn.textContent = '✓ Copiado';
+    } catch (_) {
+      btn.textContent = '✗ Falhou';
+    }
+    setTimeout(() => { btn.textContent = '📋 Copiar'; }, 1600);
+  });
+
+  $('btn-restore-original').addEventListener('click', () => {
+    if (!TextState.original) return;
+    $('txt').value = TextState.original;
+    $('txt').dispatchEvent(new Event('input'));
+    hide('rewrite-box');
   });
 }
 
@@ -329,10 +401,10 @@ function initAnalyzeButton() {
 //  INIT
 // ════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  initApiKey();
   initTextarea();
   initExamples();
   initAnalyzeButton();
+  initRewriteButton();
   resetUI();
   updateAnalyzeBtn();
 });

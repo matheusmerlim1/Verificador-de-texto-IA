@@ -1,0 +1,14 @@
+# Credenciais — nunca commitar
+config.local.js
+*.key
+.env
+.env.*
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Dependências e build
+node_modules/
+dist/

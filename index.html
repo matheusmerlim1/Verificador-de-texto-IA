@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Detector de Texto IA</title>
+  <title>Detector de Autoria por IA</title>
 
   <!-- Fontes -->
   <link
@@ -12,7 +12,7 @@
   />
 
   <!-- Estilos -->
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
@@ -22,10 +22,18 @@
 <header>
   <div>
     <div class="header-sub">Ferramenta de Análise</div>
-    <div class="header-title">Detector de Texto IA</div>
+    <div class="header-title">Detector de Autoria por IA</div>
   </div>
   <div class="header-badge">POWERED BY CLAUDE · ANTHROPIC</div>
 </header>
+
+<!-- ══════════════════════════════════
+     ABAS DE MODO
+     ══════════════════════════════════ -->
+<nav class="tabs">
+  <button class="tab active" data-mode="text">📝 Texto</button>
+  <button class="tab" data-mode="code">📁 Projeto de código</button>
+</nav>
 
 <!-- ══════════════════════════════════
      BARRA DE API KEY
@@ -41,6 +49,7 @@
     spellcheck="false"
   />
   <span class="apikey-badge idle" id="api-key-badge">Aguardando chave</span>
+  <select id="model-select" class="model-select" title="Modelo usado na análise"></select>
   <span class="apikey-hint">
     Obtenha em
     <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">
@@ -50,15 +59,14 @@
   </span>
 </div>
 
-<!-- ══════════════════════════════════
-     LAYOUT PRINCIPAL
-     ══════════════════════════════════ -->
-<main>
+<!-- ══════════════════════════════════════════════════════════
+     MODO 1 — TEXTO
+     ══════════════════════════════════════════════════════════ -->
+<main class="mode-panel active" data-mode="text">
 
   <!-- ── Coluna esquerda: input ── -->
   <div class="input-side">
 
-    <!-- Textarea -->
     <div>
       <div class="field-label">Texto para análise</div>
       <textarea
@@ -67,7 +75,6 @@
       ></textarea>
     </div>
 
-    <!-- Controles -->
     <div class="controls">
       <span class="word-count">palavras: <span id="wc">0</span></span>
       <button class="btn btn-ghost" id="btn-clear">Limpar</button>
@@ -76,7 +83,6 @@
       </button>
     </div>
 
-    <!-- Exemplos rápidos -->
     <div>
       <div class="field-label">Exemplos rápidos</div>
       <div class="examples">
@@ -87,7 +93,6 @@
       </div>
     </div>
 
-    <!-- Aviso -->
     <div class="disclaimer">
       ⚠️ Esta ferramenta utiliza análise linguística via IA para estimar a probabilidade
       de autoria artificial. Nenhum detector é 100% preciso. Use como referência
@@ -99,7 +104,6 @@
   <!-- ── Coluna direita: resultado ── -->
   <div class="result-side">
 
-    <!-- Estado vazio -->
     <div class="empty-state" id="empty-state">
       <div class="empty-icon">🔬</div>
       <div class="empty-title">Nenhum texto analisado</div>
@@ -108,7 +112,6 @@
       </div>
     </div>
 
-    <!-- Carregando -->
     <div class="loading-state" id="loading-state">
       <div class="loading-dots">
         <div class="loading-dot"></div>
@@ -120,11 +123,12 @@
       </div>
     </div>
 
-    <!-- Gauge de probabilidade -->
+    <!-- Gauge -->
     <div class="gauge-wrap" id="gauge-wrap">
       <div class="gauge-label">Probabilidade de autoria por IA</div>
       <div class="gauge-score" id="gauge-score">—</div>
       <div class="gauge-verdict" id="gauge-verdict">—</div>
+      <div class="gauge-delta" id="gauge-delta"></div>
       <div class="gauge-bar-track">
         <div class="gauge-bar-fill" id="gauge-fill"></div>
       </div>
@@ -135,7 +139,7 @@
       </div>
     </div>
 
-    <!-- Indicadores linguísticos -->
+    <!-- Indicadores -->
     <div class="indicators" id="indicators">
       <div class="ind-label">Indicadores linguísticos</div>
       <div id="ind-list"></div>
@@ -145,14 +149,381 @@
     <div class="analysis-box" id="analysis-box">
       <div class="ind-label">Análise detalhada</div>
       <div class="analysis-text" id="analysis-text"></div>
+      <div id="text-suggestions" class="text-suggestions"></div>
+    </div>
+
+    <!-- Rastros técnicos (determinístico, roda sem API) -->
+    <div class="trace-box" id="trace-box"></div>
+
+    <!-- Ações de reescrita -->
+    <div class="text-actions" id="text-actions">
+      <select id="rewrite-tone" class="tone-select" title="Registro da reescrita">
+        <option value="manter">Manter o registro original</option>
+        <option value="academico">Acadêmico com voz autoral</option>
+        <option value="neutro">Profissional direto</option>
+        <option value="informal">Coloquial</option>
+      </select>
+      <button class="btn btn-primary" id="btn-rewrite">✍️ Reescrever para reduzir IA</button>
+      <details class="voice-wrap">
+        <summary>Amostra da sua escrita (opcional)</summary>
+        <textarea id="voice-sample" class="voice-sample" placeholder="Cole aqui um trecho que você escreveu. A reescrita imita o seu ritmo, vocabulário e pontuação — e a amostra tem precedência sobre as regras gerais."></textarea>
+      </details>
+    </div>
+
+    <!-- Resultado da reescrita -->
+    <div class="rewrite-box" id="rewrite-box">
+      <div class="rw-head">
+        <div class="ind-label" style="margin:0">Versão reescrita</div>
+        <div class="rw-buttons">
+          <button class="btn btn-ghost btn-sm" id="btn-copy-rewrite">📋 Copiar</button>
+          <button class="btn btn-ghost btn-sm" id="btn-restore-original">↩️ Original</button>
+          <button class="btn btn-primary btn-sm" id="btn-apply-rewrite">✓ Usar e reanalisar</button>
+        </div>
+      </div>
+      <div class="rewrite-text" id="rewrite-text"></div>
+      <div id="rewrite-audit"></div>
+      <div id="rewrite-marked"></div>
+      <div id="rewrite-changes"></div>
+      <div id="rewrite-kept"></div>
+      <div id="rewrite-warnings"></div>
     </div>
 
   </div><!-- /result-side -->
 
 </main>
 
-<!-- Script -->
-<script src="app.js"></script>
+<!-- ══════════════════════════════════════════════════════════
+     MODO 2 — PROJETO DE CÓDIGO
+     ══════════════════════════════════════════════════════════ -->
+<main class="mode-panel" data-mode="code">
+
+  <!-- ── Coluna esquerda: entrada de arquivos ── -->
+  <div class="input-side">
+
+    <div>
+      <div class="field-label">Pasta do projeto</div>
+
+      <div class="code-drop" id="code-drop">
+        <div class="drop-icon">📂</div>
+        <div class="drop-title">Arraste a pasta do projeto aqui</div>
+        <div class="drop-sub">ou selecione manualmente</div>
+        <div class="drop-buttons">
+          <button class="btn btn-primary btn-sm" id="btn-pick-folder">Escolher pasta</button>
+          <button class="btn btn-ghost btn-sm" id="btn-pick-files">Escolher arquivos</button>
+        </div>
+        <input type="file" id="folder-input" webkitdirectory directory multiple hidden />
+        <input type="file" id="files-input" multiple hidden />
+      </div>
+
+      <div class="readonly-note">
+        🔒 <strong>Somente leitura.</strong> Os arquivos são lidos no seu navegador para
+        gerar o relatório. Nenhum arquivo do projeto é alterado, reescrito ou enviado
+        para qualquer servidor além da API da Anthropic.
+      </div>
+    </div>
+
+    <!-- Lista de arquivos -->
+    <div class="file-panel" id="file-panel">
+      <div class="file-panel-head">
+        <div class="field-label" style="margin:0">Arquivos</div>
+        <div class="file-panel-actions">
+          <button class="link-btn" id="sel-all">todos</button>
+          <span class="muted">·</span>
+          <button class="link-btn" id="sel-none">nenhum</button>
+        </div>
+      </div>
+      <div class="file-summary" id="file-summary"></div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-ghost" id="btn-clear-code">Limpar</button>
+      <button class="btn btn-ghost" id="btn-cancel-code" style="display:none">Cancelar</button>
+      <button class="btn btn-primary" id="btn-analyze-code" disabled>📊 Analisar projeto</button>
+    </div>
+
+    <div class="mode-note" id="code-mode-note"></div>
+
+    <div class="disclaimer">
+      ⚠️ A estimativa combina análise estática local com avaliação semântica por IA.
+      Código idiomático, formatado por linter ou que segue o padrão de uma equipe pode
+      elevar a pontuação sem ter sido gerado por IA. O relatório é indicativo,
+      não é prova de autoria.
+    </div>
+
+  </div><!-- /input-side -->
+
+  <!-- ── Coluna direita: relatório ── -->
+  <div class="result-side">
+
+    <div class="empty-state" id="code-empty">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">Nenhum projeto analisado</div>
+      <div class="empty-sub">
+        Selecione a pasta do projeto e clique em "Analisar" para gerar o relatório
+        com o percentual por documento.
+      </div>
+    </div>
+
+    <!-- Progresso -->
+    <div class="code-progress" id="code-progress">
+      <div class="ind-label">Analisando arquivos</div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-info">
+        <span id="progress-file" class="progress-file">—</span>
+        <span id="progress-count" class="progress-count">0/0</span>
+      </div>
+    </div>
+
+    <!-- Relatório -->
+    <div class="report" id="report">
+
+      <!-- Cabeçalho -->
+      <div class="rep-head">
+        <div>
+          <div class="ind-label" style="margin:0">Relatório de autoria</div>
+          <div class="rep-project" id="rep-project"></div>
+          <div class="rep-meta" id="rep-meta"></div>
+        </div>
+        <div class="rep-exports">
+          <button class="btn btn-ghost btn-sm" id="btn-export-md">⬇️ Markdown</button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-csv">⬇️ CSV</button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-json">⬇️ JSON</button>
+          <button class="btn btn-ghost btn-sm" id="btn-print">🖨️ PDF</button>
+        </div>
+      </div>
+
+      <!-- Gauge geral -->
+      <div class="gauge-wrap rep-gauge">
+        <div class="gauge-label">Percentual de código com características de IA</div>
+        <div class="gauge-score" id="rep-score">—</div>
+        <div class="gauge-verdict" id="rep-verdict">—</div>
+        <div class="gauge-delta" id="rep-simple"></div>
+        <div class="gauge-bar-track">
+          <div class="gauge-bar-fill" id="rep-fill"></div>
+        </div>
+        <div class="gauge-scale">
+          <span>Humano</span>
+          <span>Incerto</span>
+          <span>IA</span>
+        </div>
+      </div>
+
+      <!-- Distribuição -->
+      <div class="rep-section">
+        <div class="ind-label">Distribuição dos arquivos</div>
+        <div id="rep-dist"></div>
+      </div>
+
+      <!-- Tabela por documento -->
+      <div class="rep-section">
+        <div class="ind-label">Percentual por documento</div>
+        <div id="rep-table"></div>
+      </div>
+
+      <!-- Sugestões do projeto -->
+      <div class="rep-section">
+        <div class="ind-label">Ações prioritárias para reduzir o percentual</div>
+        <div id="rep-global"></div>
+      </div>
+
+      <!-- Detalhe por arquivo -->
+      <div class="rep-section">
+        <div class="ind-label">Detalhamento por arquivo</div>
+        <div id="rep-details"></div>
+      </div>
+
+      <div class="rep-footnote">
+        Reduzir o percentual não altera a autoria real do código. As sugestões visam
+        tornar o código mais específico do domínio, mais legível e mais rastreável —
+        benefícios válidos independentemente da questão de autoria.
+      </div>
+
+    </div><!-- /report -->
+
+  </div><!-- /result-side -->
+
+</main>
+
+<!-- Scripts -->
+<script src="config.js"></script>
+<script src="vendor/avoid-ai-writing/patterns.js"></script>
+<script src="js/core.js"></script>
+<script src="js/forensics.js"></script>
+<script src="js/humanizer.js"></script>
+<script src="js/heuristics.js"></script>
+<script src="js/app.js"></script>
+<script src="js/code.js"></script>
+<script src="js/report.js"></script>
+
+<!-- === Botao de volta ao portfolio - cole antes de </body> === -->
+<a id="mr-portfolio-btn" href="https://matheusmerlim1.github.io/" target="_blank" rel="noopener"
+   aria-label="Abrir o portf&oacute;lio de Matheus Raposo" title="Ver todos os meus projetos">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>
+  </svg>
+  <span>Portf&oacute;lio</span>
+</a>
+<style>
+#mr-portfolio-btn {
+  position: fixed; top: 12px; right: 12px; z-index: 2147483000;
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .42rem .8rem; border-radius: 999px;
+  font: 600 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #e8edf5; text-decoration: none; white-space: nowrap;
+  background: rgba(18,24,38,.92);
+  border: 1px solid rgba(88,166,255,.45);
+  box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  transition: transform .15s, border-color .15s, background .15s;
+}
+#mr-portfolio-btn:hover {
+  transform: translateY(-1px); color: #fff; text-decoration: none;
+  background: rgba(24,32,50,.96); border-color: #58a6ff;
+}
+#mr-portfolio-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+@media (max-width: 520px) {
+  #mr-portfolio-btn { padding: .45rem; }
+  #mr-portfolio-btn span { display: none; }
+}
+@media print { #mr-portfolio-btn { display: none; } }
+</style>
+<script>
+/* Abre espaco para o botao em vez de cobrir o que ja existia no canto.
+   1) empurra para a esquerda o conteudo da barra que ocupa aquele espaco;
+   2) se ainda sobrar sobreposicao, desloca o proprio item. */
+(function () {
+  var btn = document.getElementById('mr-portfolio-btn');
+  if (!btn) return;
+
+  var desfazer = [];
+
+  function limpar() {
+    for (var i = 0; i < desfazer.length; i++) desfazer[i]();
+    desfazer = [];
+  }
+
+  function guardar(el, prop) {
+    var antes = el.style[prop];
+    desfazer.push(function () { el.style[prop] = antes; });
+  }
+
+  /* item discreto = nao ocupa quase toda a largura; e um controle, rotulo ou icone */
+  function ehItem(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    return el.getBoundingClientRect().width < innerWidth * 0.7;
+  }
+
+  /* sobe ate a barra que contem o item (algo largo o bastante para ter padding) */
+  function barra(el) {
+    for (var n = 0; el && n < 8; n++, el = el.parentElement) {
+      if (el === document.body || el === document.documentElement) return null;
+      if (el.getBoundingClientRect().width >= innerWidth * 0.6) return el;
+    }
+    return null;
+  }
+
+  function encosta(a, b) {
+    return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+  }
+
+  function varrer() {
+    var r = btn.getBoundingClientRect();
+    var y = Math.round(r.top + r.height / 2);
+    var achados = [];
+    btn.style.visibility = 'hidden';
+    for (var x = Math.floor(r.right); x > r.left - 10; x -= 8) {
+      if (x < 1 || x > innerWidth - 1) continue;
+      var sob = document.elementFromPoint(x, y);
+      if (ehItem(sob) && achados.indexOf(sob) < 0) achados.push(sob);
+    }
+    btn.style.visibility = '';
+    return achados;
+  }
+
+  function ajustar() {
+    limpar();
+    var r = btn.getBoundingClientRect();
+    if (!r.width) return;
+    var reserva = Math.ceil(r.width + 20);
+
+    /* 1) padding na barra: desloca o conteudo dela para a esquerda */
+    var barras = [];
+    varrer().forEach(function (item) {
+      var b = barra(item);
+      if (b && barras.indexOf(b) < 0) barras.push(b);
+    });
+    barras.forEach(function (b) {
+      if ((parseFloat(getComputedStyle(b).paddingRight) || 0) >= reserva) return;
+      guardar(b, 'paddingRight');
+      b.style.paddingRight = reserva + 'px';
+    });
+
+    /* 2) o que continuar embaixo do botao (tipicamente position:absolute,
+          que nao anda com padding) e deslocado individualmente */
+    r = btn.getBoundingClientRect();
+    varrer().forEach(function (item) {
+      if (!encosta(item.getBoundingClientRect(), r)) return;
+      var cs = getComputedStyle(item);
+      if (cs.position === 'absolute' || cs.position === 'fixed') {
+        var atual = parseFloat(cs.right);
+        guardar(item, 'right');
+        item.style.right = (isNaN(atual) ? reserva : atual + reserva) + 'px';
+      } else {
+        guardar(item, 'marginRight');
+        item.style.marginRight =
+          ((parseFloat(cs.marginRight) || 0) + reserva) + 'px';
+      }
+    });
+
+    /* 3) rede de seguranca: o que insistir em ficar embaixo do botao e
+          deslocado no proprio elemento. transform sempre move, seja qual
+          for o position, o display ou o container. */
+    for (var tent = 0; tent < 3; tent++) {
+      r = btn.getBoundingClientRect();
+      var teimosos = varrer().filter(function (item) {
+        return encosta(item.getBoundingClientRect(), r);
+      });
+      if (!teimosos.length) break;
+      teimosos.forEach(function (item) {
+        var caixa = item.getBoundingClientRect();
+        var passo = Math.ceil(caixa.right - r.left + 10);
+        if (passo <= 0) return;
+        guardar(item, 'transform');
+        item.style.transform = 'translateX(-' + passo + 'px)';
+      });
+    }
+
+    btn.setAttribute('data-mr-ok', '1');   /* marca que o ajuste ja rodou */
+  }
+
+  var pendente = 0;
+  function agendar() {
+    /* sem requestAnimationFrame de proposito: ele nao dispara quando a pagina
+       esta em aba oculta ou em iframe fora da tela, e as leituras de layout
+       abaixo ja forcam o recalculo sozinhas */
+    clearTimeout(pendente);
+    pendente = setTimeout(ajustar, 60);
+  }
+
+  agendar();
+  addEventListener('DOMContentLoaded', agendar);
+  addEventListener('load', agendar);
+  addEventListener('resize', agendar);
+
+  /* muita pagina monta o cabecalho por JS depois do load; refaz o calculo
+     quando o DOM mudar e em algumas passadas tardias, por seguranca */
+  if (window.MutationObserver) {
+    new MutationObserver(agendar).observe(document.documentElement,
+      { childList: true, subtree: true });
+  }
+  [400, 1200, 3000].forEach(function (t) { setTimeout(agendar, t); });
+})();
+</script>
+<!-- === fim do botao === -->
 
 <!-- === Botao de volta ao portfolio - cole antes de </body> === -->
 <a id="mr-portfolio-btn" href="https://matheusmerlim1.github.io/" target="_blank" rel="noopener"
