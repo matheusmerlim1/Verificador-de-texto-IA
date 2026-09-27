@@ -205,6 +205,21 @@ function renderFileDetails(rep) {
           ${traces}
           ${hotspots}
           ${suggestions}
+          <div class="det-block det-humanize">
+            <div class="det-block-title">Reescrever este arquivo</div>
+            <div class="hz-controls">
+              <select class="hz-depth" data-hz-depth="${escHtml(f.path)}" title="O quanto a reescrita pode mexer">
+                <option value="conservadora">conservadora — comentários e nomes locais</option>
+                <option value="padrao" selected>padrão — inclui organização e tratamento de erro</option>
+                <option value="profunda">profunda — pode desfazer abstração prematura</option>
+              </select>
+              <button class="btn btn-sm" data-hz-run="${escHtml(f.path)}">✍️ Gerar versão humanizada</button>
+            </div>
+            <div class="hz-warn">Sai uma cópia na tela, para copiar ou baixar. O arquivo do seu
+              projeto não é tocado — e código reescrito por modelo passa pelos seus testes antes
+              de entrar.</div>
+            <div class="hz-out" data-hz-out="${escHtml(f.path)}"></div>
+          </div>
         </div>
       </details>`;
   }).join('');

@@ -27,6 +27,37 @@ de escrita: a única saída é o relatório, que você baixa separadamente.
 
 ---
 
+
+## Humanizar o código (modo Código)
+
+A análise diz o que mudar; este botão faz a mudança. No cartão de cada arquivo analisado, em
+**Reescrever este arquivo**, escolha o alcance e peça a versão humanizada:
+
+| alcance | o que a reescrita pode tocar |
+|---|---|
+| conservadora | comentários e nomes de variáveis e funções locais |
+| padrão | o anterior, mais organização interna e tratamento de erro cerimonial |
+| profunda | o anterior, mais desfazer abstração prematura e reordenar funções |
+
+A pauta da reescrita é a análise daquele arquivo: os sinais encontrados, os trechos suspeitos e
+as sugestões já produzidas. O catálogo de padrões de **código** gerado fica em
+`js/humanizer-code.js` — a skill `avoid-ai-writing` que o projeto embute cobre prosa e declara
+a própria limitação ("does not detect AI-generated code, only prose").
+
+O resultado aparece no próprio cartão, com:
+
+- a heurística local remedida, para você ver quanto caiu (ex.: 64% → 16%);
+- o código completo, para copiar ou baixar;
+- o que mudou e por quê, e o que foi mantido de propósito;
+- o risco que o modelo declara de ter mexido em comportamento sem querer.
+
+**Duas garantias.** Nenhum arquivo do seu projeto é gravado — sai uma cópia na tela, e quem
+decide o que fazer com ela é você. E o prompt proíbe alterar comportamento, assinatura pública,
+dependências e texto de mensagem de erro; ainda assim, código reescrito por modelo passa pelos
+seus testes antes de entrar.
+
+Para conferir o fluxo sem gastar API: `node tools/test-humanizar.js`.
+
 ## Arquivos
 
 ```

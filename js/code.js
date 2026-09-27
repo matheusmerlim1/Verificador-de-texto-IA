@@ -351,6 +351,7 @@ async function runCodeAnalysis() {
 
   if (CodeState.results.length) {
     renderReport(buildProjectReport(CodeState.results));
+    initHumanizeButtons();     // os cartões de arquivo acabaram de existir
   } else {
     show('code-empty', 'flex');
   }
@@ -444,6 +445,118 @@ function fallbackSuggestions(h) {
 // ════════════════════════════════════════════════
 //  AGREGAÇÃO DO PROJETO
 // ════════════════════════════════════════════════
+// ════════════════════════════════════════════════
+//  HUMANIZAR UM ARQUIVO
+// ════════════════════════════════════════════════
+/**
+ * Liga os botões de reescrita dos cartões de arquivo. Chamado depois que o
+ * relatório é montado, porque os cartões só existem a partir dali.
+ *
+ * O conteúdo do arquivo é lido DE NOVO aqui, do handle que ficou em
+ * CodeState.files — a análise descarta o texto ao terminar, e manter tudo em
+ * memória por causa de um botão que talvez ninguém clique seria desperdício.
+ */
+function initHumanizeButtons() {
+  const raiz = $('rep-details');
+  if (!raiz || raiz.dataset.hzLigado) return;
+  raiz.dataset.hzLigado = '1';
+
+  raiz.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-hz-run]');
+    if (btn) return humanizeFile(btn.getAttribute('data-hz-run'), btn);
+
+    const copiar = e.target.closest('[data-hz-copy]');
+    if (copiar) {
+      const cod = copiar.closest('.hz-result').querySelector('.hz-code').textContent;
+      await navigator.clipboard.writeText(cod);
+      copiar.textContent = '✓ Copiado';
+      setTimeout(() => { copiar.textContent = '📋 Copiar'; }, 1600);
+      return;
+    }
+
+    const baixar = e.target.closest('[data-hz-download]');
+    if (baixar) {
+      const caixa = baixar.closest('.hz-result');
+      const cod = caixa.querySelector('.hz-code').textContent;
+      const nome = baixar.getAttribute('data-hz-download');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([cod], { type: 'text/plain;charset=utf-8' }));
+      a.download = nome;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }
+  });
+}
+
+/** Pede a reescrita de um arquivo e mostra o resultado no próprio cartão. */
+async function humanizeFile(path, btn) {
+  const entrada = CodeState.files.find(f => f.path === path);
+  const analise = (CodeState.results || []).find(r => r.path === path);
+  const saida = document.querySelector(`[data-hz-out="${CSS.escape(path)}"]`);
+  if (!entrada || !analise || !saida) return;
+
+  if (!App.keyOk) {
+    saida.innerHTML = '<div class="hz-erro">A reescrita usa a API. Configure a chave no topo da página.</div>';
+    return;
+  }
+
+  const profundidade = document.querySelector(`[data-hz-depth="${CSS.escape(path)}"]`);
+  const intensidade = profundidade ? profundidade.value : 'padrao';
+
+  btn.disabled = true;
+  const rotulo = btn.innerHTML;
+  btn.innerHTML = '<span class="spin"></span> Reescrevendo...';
+  saida.innerHTML = '';
+
+  try {
+    const conteudo = await readFileText(entrada.file);
+    const res = await callClaudeJSON(
+      buildHumanizeCodePrompt(entrada, conteudo, analise, { intensidade }),
+      { maxTokens: 8000 });
+
+    const codigo = String(res.rewritten || '');
+    if (!codigo.trim()) throw new Error('a resposta veio sem o arquivo reescrito');
+
+    // Remede pela heurística local: é a parte que roda aqui, sem depender da API,
+    // e mostra se a reescrita de fato mexeu no que era medido.
+    const antes = analise.heuristicScore;
+    const depois = analyzeHeuristics(codigo, entrada.path);
+    const delta = (antes !== null && depois) ? antes - depois.score : null;
+
+    const mudancas = (res.changes || []).map(c =>
+      `<li><b>${escHtml(c.what || '')}</b>${c.where ? ` <span class="muted">(${escHtml(c.where)})</span>` : ''}` +
+      `${c.why ? `<div class="hz-why">${escHtml(c.why)}</div>` : ''}</li>`).join('');
+    const mantido = (res.kept || []).map(k => `<li>${escHtml(k)}</li>`).join('');
+
+    const risco = String(res.risk || 'nenhum').toLowerCase();
+    const avisoRisco = (risco === 'medio' || risco === 'alto')
+      ? `<div class="hz-erro">Risco declarado de ter mexido em comportamento: <b>${escHtml(risco)}</b>.
+         Compare com o original antes de usar.</div>` : '';
+
+    saida.innerHTML = `
+      <div class="hz-result">
+        ${avisoRisco}
+        <div class="hz-deltas">
+          <span>heurística local: <b>${antes === null ? '—' : antes + '%'}</b> → <b>${depois.score}%</b></span>
+          ${delta !== null ? `<span class="hz-delta ${delta > 0 ? 'ok' : 'flat'}">${delta > 0 ? '−' + delta : '±0'} ponto(s)</span>` : ''}
+        </div>
+        ${res.note ? `<div class="hz-note">${escHtml(res.note)}</div>` : ''}
+        <div class="hz-actions">
+          <button class="btn btn-sm" data-hz-copy>📋 Copiar</button>
+          <button class="btn btn-sm" data-hz-download="${escHtml(entrada.name)}">⬇️ Baixar cópia</button>
+        </div>
+        <pre class="hz-code">${escHtml(codigo)}</pre>
+        ${mudancas ? `<details class="hz-list"><summary>O que mudou (${(res.changes || []).length})</summary><ul>${mudancas}</ul></details>` : ''}
+        ${mantido ? `<details class="hz-list"><summary>O que foi mantido de propósito (${(res.kept || []).length})</summary><ul>${mantido}</ul></details>` : ''}
+      </div>`;
+  } catch (err) {
+    saida.innerHTML = `<div class="hz-erro">Não deu para reescrever: ${escHtml(err.message || String(err))}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = rotulo;
+  }
+}
+
 function buildProjectReport(results) {
   const withLoc = results.map(r => ({ ...r, loc: r.stats?.loc || 1 }));
   const totalLoc = withLoc.reduce((a, r) => a + r.loc, 0);
