@@ -37,6 +37,14 @@
 
 window.DLM_CONFIG = {
 
+  /**
+   * ID do workspace (opcional). Só é necessário quando a chave é da ORGANIZAÇÃO:
+   * nesse caso a API responde 400 pedindo o header anthropic-workspace-id.
+   * Está em console.anthropic.com → Settings → Workspaces; começa com wrkspc_.
+   * Chave criada dentro de um workspace não precisa disto.
+   */
+  workspaceId: '',
+
   /** Chave da Anthropic. Vazio = cada usuário informa a sua. */
   apiKey: '',
 

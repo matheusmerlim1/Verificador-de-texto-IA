@@ -1170,3 +1170,36 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
   font-size: 13px; padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
   background: rgba(226, 96, 78, .12); border: 1px solid rgba(226, 96, 78, .45);
 }
+
+/* Campo do workspace: opcional, e só entra em cena com chave de organização. */
+.apikey-input--ws { max-width: 230px; font-size: 12px; opacity: .85; }
+.apikey-input--ws:focus { opacity: 1; }
+
+/* ════════════════════════════════════════════════
+   REESCRITA DO PROJETO INTEIRO
+   ════════════════════════════════════════════════ */
+.rep-section--pz { border-top: 1px solid var(--line, #2a3546); padding-top: 14px; }
+.pz-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+.pz-title { font-weight: 700; margin-bottom: 2px; }
+.pz-sub { font-size: 12.5px; color: var(--muted, #8b9bb0); max-width: 70ch; }
+.pz-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pz-check { font-size: 12.5px; color: var(--muted, #8b9bb0); display: inline-flex; gap: 5px; align-items: center; }
+.pz-progress { margin-top: 10px; }
+.pz-bar { height: 6px; border-radius: 3px; background: var(--surface-2, #1b2331); overflow: hidden; }
+.pz-bar-fill { height: 100%; width: 0; background: var(--accent, #4a9eff); transition: width .2s; }
+.pz-status { font-size: 12px; color: var(--muted, #8b9bb0); margin-top: 4px; }
+.pz-result { margin-top: 12px; }
+.pz-scores { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.pz-score { display: flex; gap: 6px; align-items: baseline; }
+.pz-score b { font-size: 24px; font-family: ui-monospace, "Cascadia Mono", monospace; }
+.pz-score-lab { font-size: 12px; color: var(--muted, #8b9bb0); }
+.pz-arrow { color: var(--muted, #8b9bb0); }
+.pz-queda.ok { color: var(--ok, #3fb37f); font-weight: 700; }
+.pz-queda.flat { color: var(--muted, #8b9bb0); }
+.pz-actions { margin: 10px 0; }
+.pz-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.pz-table th, .pz-table td { padding: 5px 8px; border-bottom: 1px solid var(--line, #2a3546); text-align: left; }
+.pz-table th { color: var(--muted, #8b9bb0); font-weight: 600; font-size: 12px; }
+.pz-table .num { text-align: right; font-family: ui-monospace, "Cascadia Mono", monospace; }
+.pz-baixou { color: var(--ok, #3fb37f); font-weight: 700; }
+.pz-igual, .pz-err { color: var(--muted, #8b9bb0); }

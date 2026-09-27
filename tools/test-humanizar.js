@@ -144,6 +144,78 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
     return true;
   });
 
+  await passo("reescrever o projeto inteiro mede o antes e o depois", async () => {
+    await rodar(`
+      App.apiKey = 'sk-ant-chave-de-mentira-para-o-teste-0000';
+      CodeState.projectName = 'exemplo';
+      CodeState.files = [
+        { path: "src/a.js", name: "a.js", lang: "javascript", size: 300, include: true,
+          file: new File([["function processData(data) {", "  // retorna",
+            "  return data;", "}"].join(String.fromCharCode(10))], "a.js") },
+        { path: "src/b.js", name: "b.js", lang: "javascript", size: 100, include: true,
+          file: new File(["const x = 1;"], "b.js") }
+      ];
+      CodeState.results = CodeState.files.map((f, i) => ({
+        path: f.path, name: f.name, lang: f.lang, size: f.size,
+        score: i === 0 ? 80 : 40, heuristicScore: 60, aiScore: 85, confidence: "media",
+        verdict: "", stats: null, signals: [], hotspots: [], suggestions: [],
+        summary: "", forensics: null, error: null
+      }));
+      renderReport(buildProjectReport(CodeState.results));
+      initHumanizeButtons(); initProjectHumanize();
+      // reescrita e reanálise, as duas de mentira
+      let chamada = 0;
+      window.callClaudeJSON = async () => {
+        chamada++;
+        return chamada % 2 === 1
+          ? { rewritten: ["function normalizaPedido(pedido) {", "  return pedido;", "}"]
+                .join(String.fromCharCode(10)),
+              changes: [{ what: "nome", why: "genérico" }], kept: [], risk: "nenhum" }
+          : { score: 20, confidence: "media", verdict: "parece autoral",
+              signals: [], hotspots: [], suggestions: [], summary: "" };
+      };
+    `);
+    await esperar(300);
+    if (!(await rodar(`!!document.getElementById('pz-run')`)))
+      throw new Error("o botão de reescrever tudo não apareceu");
+
+    await rodar(`document.getElementById('pz-run').click()`);
+    // espera o fim (2 arquivos x 2 chamadas)
+    for (let i = 0; i < 40; i++) {
+      await esperar(200);
+      if (await rodar(`!!document.querySelector('.pz-result')`)) break;
+    }
+    const r = JSON.parse(await rodar(`(() => {
+      const el = document.querySelector('.pz-result');
+      if (!el) return JSON.stringify({ falta: true });
+      const nums = [...el.querySelectorAll('.pz-score b')].map(b => b.textContent.trim());
+      return JSON.stringify({
+        falta: false, antesDepois: nums,
+        queda: (el.querySelector('.pz-queda') || {}).textContent || '',
+        linhas: el.querySelectorAll('.pz-table tbody tr').length,
+        temZip: !!el.querySelector('#pz-zip')
+      });
+    })()`));
+    if (r.falta) throw new Error("não montou o resumo do projeto");
+    if (r.linhas !== 2) throw new Error("linhas na tabela: " + r.linhas);
+    if (!r.temZip) throw new Error("faltou o botão de baixar o zip");
+    if (r.antesDepois[0] === r.antesDepois[1]) throw new Error("antes e depois iguais: " + r.antesDepois.join(" → "));
+    console.log("     (projeto: " + r.antesDepois.join(" → ") + ", " + r.queda.trim() + ")");
+    return true;
+  });
+
+  await passo("o zip sai com os arquivos reescritos", async () => {
+    const r = JSON.parse(await rodar(`(async () => {
+      const zip = buildZip([{ path: "src/a.js", text: "conteudo a" }, { path: "src/b.js", text: "b" }]);
+      const buf = new Uint8Array(await zip.arrayBuffer());
+      const ass = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
+      return JSON.stringify({ bytes: buf.length, pk: ass === "PK" + String.fromCharCode(3,4) });
+    })()`));
+    if (!r.pk) throw new Error("o arquivo não começa com a assinatura PK");
+    if (r.bytes < 100) throw new Error("zip pequeno demais: " + r.bytes);
+    return true;
+  });
+
   ws.close(); chrome.kill();
   console.log("ok: " + ok.length);
   ok.forEach(x => console.log("  ✓", x));

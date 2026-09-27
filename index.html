@@ -50,6 +50,15 @@
   />
   <span class="apikey-badge idle" id="api-key-badge">Aguardando chave</span>
   <select id="model-select" class="model-select" title="Modelo usado na análise"></select>
+  <input
+    id="workspace-input"
+    class="apikey-input apikey-input--ws"
+    type="text"
+    placeholder="Workspace (só p/ chave da organização)"
+    title="ID do workspace, em console.anthropic.com → Settings → Workspaces. Começa com wrkspc_. Deixe vazio se a sua chave já pertence a um workspace."
+    autocomplete="off"
+    spellcheck="false"
+  />
   <span class="apikey-hint">
     Obtenha em
     <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">
@@ -329,6 +338,11 @@
         <div id="rep-global"></div>
       </div>
 
+      <!-- Reescrita do projeto inteiro -->
+      <div class="rep-section rep-section--pz">
+        <div id="rep-humanize"></div>
+      </div>
+
       <!-- Detalhe por arquivo -->
       <div class="rep-section">
         <div class="ind-label">Detalhamento por arquivo</div>
@@ -354,6 +368,7 @@
 <script src="js/forensics.js"></script>
 <script src="js/humanizer.js"></script>
 <script src="js/humanizer-code.js"></script>
+<script src="js/zip.js"></script>
 <script src="js/heuristics.js"></script>
 <script src="js/app.js"></script>
 <script src="js/code.js"></script>

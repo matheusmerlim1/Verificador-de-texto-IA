@@ -352,6 +352,7 @@ async function runCodeAnalysis() {
   if (CodeState.results.length) {
     renderReport(buildProjectReport(CodeState.results));
     initHumanizeButtons();     // os cartões de arquivo acabaram de existir
+    initProjectHumanize();
   } else {
     show('code-empty', 'flex');
   }
@@ -555,6 +556,183 @@ async function humanizeFile(path, btn) {
     btn.disabled = false;
     btn.innerHTML = rotulo;
   }
+}
+
+// ════════════════════════════════════════════════
+//  REESCREVER O PROJETO INTEIRO
+// ════════════════════════════════════════════════
+/**
+ * Reescreve todos os arquivos analisados e, para cada um, roda a análise DE NOVO
+ * sobre o resultado. O percentual final é medido no código reescrito, não estimado
+ * a partir do que o modelo disse ter mudado.
+ *
+ * São duas chamadas por arquivo (reescrever, reanalisar). A barra diz o total antes
+ * de começar, e o botão de cancelar interrompe entre arquivos.
+ */
+const PZ = { running: false, abort: null, itens: [] };
+
+function initProjectHumanize() {
+  const raiz = $('rep-humanize');
+  if (!raiz || raiz.dataset.pzLigado) return;
+  raiz.dataset.pzLigado = '1';
+
+  raiz.addEventListener('click', async e => {
+    if (e.target.closest('#pz-run'))    return runProjectHumanize();
+    if (e.target.closest('#pz-cancel')) { if (PZ.abort) PZ.abort.abort(); return; }
+
+    const baixar = e.target.closest('#pz-zip');
+    if (baixar) {
+      const zip = buildZip(PZ.itens.filter(i => i.codigo)
+        .map(i => ({ path: i.path, text: i.codigo })));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(zip);
+      a.download = `${(CodeState.projectName || 'projeto').replace(/[^\w.-]+/g, '_')}-humanizado.zip`;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }
+  });
+}
+
+async function runProjectHumanize() {
+  if (PZ.running) return;
+  const saida = $('pz-out');
+
+  if (!App.keyOk) {
+    saida.innerHTML = '<div class="hz-erro">A reescrita usa a API. Configure a chave no topo da página.</div>';
+    return;
+  }
+
+  const arquivos = (CodeState.results || []).filter(r => !r.error || r.heuristicScore !== null);
+  if (!arquivos.length) return;
+
+  const intensidade = ($('pz-depth') || {}).value || 'padrao';
+  const reanalisar  = ($('pz-reanalyze') || {}).checked !== false;
+
+  PZ.running = true;
+  PZ.abort = new AbortController();
+  PZ.itens = [];
+  $('pz-run').disabled = true;
+  show('pz-cancel', 'inline-flex');
+  show('pz-progress', 'block');
+  saida.innerHTML = '';
+
+  const passos = arquivos.length * (reanalisar ? 2 : 1);
+  let feitos = 0;
+  const avanca = txt => {
+    feitos++;
+    $('pz-bar-fill').style.width = Math.round(feitos / passos * 100) + '%';
+    $('pz-status').textContent = txt;
+  };
+
+  try {
+    for (const analise of arquivos) {
+      if (PZ.abort.signal.aborted) break;
+      const entrada = CodeState.files.find(f => f.path === analise.path);
+      if (!entrada) continue;
+
+      const item = { path: analise.path, name: entrada.name, antes: analise.score,
+                     depois: null, codigo: null, erro: null, changes: [], risk: 'nenhum' };
+      PZ.itens.push(item);
+
+      try {
+        const conteudo = await readFileText(entrada.file);
+        avanca(`Reescrevendo ${analise.path}…`);
+        const res = await callClaudeJSON(
+          buildHumanizeCodePrompt(entrada, conteudo, analise, { intensidade }),
+          { maxTokens: 8000, signal: PZ.abort.signal });
+
+        item.codigo  = String(res.rewritten || '');
+        item.changes = res.changes || [];
+        item.risk    = String(res.risk || 'nenhum').toLowerCase();
+        if (!item.codigo.trim()) throw new Error('resposta sem o arquivo reescrito');
+
+        // A medida local sempre existe, mesmo sem reanálise pela API.
+        const h = analyzeHeuristics(item.codigo, entrada.path);
+        item.heuristicaDepois = h ? h.score : null;
+
+        if (reanalisar && !PZ.abort.signal.aborted) {
+          avanca(`Reanalisando ${analise.path}…`);
+          const f2 = runForensics(item.codigo, { mode: 'code' });
+          const ai2 = await callClaudeJSON(
+            buildCodePrompt(entrada, item.codigo, h, f2),
+            { maxTokens: 2000, signal: PZ.abort.signal });
+          item.depois = buildFileResult(entrada, h, ai2, f2).score;
+        } else {
+          item.depois = item.heuristicaDepois;
+        }
+      } catch (err) {
+        item.erro = err.name === 'AbortError' ? 'cancelado' : (err.message || String(err));
+        if (err.name === 'AbortError') break;
+      }
+    }
+  } finally {
+    PZ.running = false;
+    $('pz-run').disabled = false;
+    hide('pz-cancel');
+    hide('pz-progress');
+    renderProjectHumanizeResult(reanalisar);
+  }
+}
+
+/** O resumo: percentual do projeto antes e depois, e a tabela por arquivo. */
+function renderProjectHumanizeResult(reanalisado) {
+  const itens = PZ.itens;
+  const saida = $('pz-out');
+  if (!itens.length) { saida.innerHTML = ''; return; }
+
+  const feitos = itens.filter(i => i.codigo && i.depois !== null);
+  // Mesma ponderação do relatório: arquivo grande pesa mais que arquivo de 10 linhas.
+  const peso = p => {
+    const f = CodeState.files.find(x => x.path === p);
+    return f ? Math.max(f.size, 1) : 1;
+  };
+  const media = (lista, campo) => {
+    const somaPeso = lista.reduce((t, i) => t + peso(i.path), 0);
+    return somaPeso ? Math.round(lista.reduce((t, i) => t + i[campo] * peso(i.path), 0) / somaPeso) : 0;
+  };
+  const antes  = media(feitos, 'antes');
+  const depois = media(feitos, 'depois');
+  const queda  = antes - depois;
+
+  const linhas = itens.map(i => {
+    if (i.erro) return `<tr><td>${escHtml(i.path)}</td><td class="num">${i.antes}%</td>
+      <td class="num">—</td><td class="pz-err">${escHtml(i.erro)}</td></tr>`;
+    const d = i.antes - i.depois;
+    return `<tr>
+      <td>${escHtml(i.path)}</td>
+      <td class="num" style="color:${getColor(i.antes)}">${i.antes}%</td>
+      <td class="num" style="color:${getColor(i.depois)}">${i.depois}%</td>
+      <td class="num ${d > 0 ? 'pz-baixou' : 'pz-igual'}">${d > 0 ? '−' + d : (d < 0 ? '+' + (-d) : '±0')}</td>
+    </tr>`;
+  }).join('');
+
+  const risco = itens.filter(i => i.risk === 'medio' || i.risk === 'alto');
+  saida.innerHTML = `
+    <div class="pz-result">
+      <div class="pz-scores">
+        <div class="pz-score"><span class="pz-score-lab">antes</span>
+          <b style="color:${getColor(antes)}">${antes}%</b></div>
+        <div class="pz-arrow">→</div>
+        <div class="pz-score"><span class="pz-score-lab">depois${reanalisado ? '' : ' (heurística)'}</span>
+          <b style="color:${getColor(depois)}">${depois}%</b></div>
+        <div class="pz-queda ${queda > 0 ? 'ok' : 'flat'}">${queda > 0 ? '−' + queda + ' pontos' : '±0'}</div>
+      </div>
+      <div class="pz-sub">${feitos.length} de ${itens.length} arquivo(s) reescritos${
+        reanalisado ? ', com o percentual medido de novo sobre o código reescrito' :
+                      '. Sem reanálise: o percentual acima é só da heurística local'}.</div>
+      ${risco.length ? `<div class="hz-erro">${risco.length} arquivo(s) com risco declarado de
+        mudança de comportamento: ${risco.map(i => escHtml(i.path)).join(', ')}. Compare com o
+        original antes de usar.</div>` : ''}
+      <div class="pz-actions">
+        <button class="btn" id="pz-zip">⬇️ Baixar tudo (.zip)</button>
+      </div>
+      <table class="pz-table">
+        <thead><tr><th>arquivo</th><th class="num">antes</th><th class="num">depois</th><th class="num">queda</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+      <div class="hz-warn">O .zip traz só os arquivos reescritos, com o caminho original. Nada
+        foi gravado no seu projeto — a comparação e os testes são com você.</div>
+    </div>`;
 }
 
 function buildProjectReport(results) {

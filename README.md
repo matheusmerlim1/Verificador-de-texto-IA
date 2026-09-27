@@ -56,6 +56,29 @@ decide o que fazer com ela é você. E o prompt proíbe alterar comportamento, a
 dependências e texto de mensagem de erro; ainda assim, código reescrito por modelo passa pelos
 seus testes antes de entrar.
 
+### Reescrever o projeto inteiro
+
+Acima do detalhamento, **Reescrever o projeto inteiro** passa por todos os arquivos analisados,
+reescreve cada um e então **roda a análise de novo sobre o código reescrito** — o percentual
+final é medido, não estimado a partir do que o modelo disse ter mudado. São duas chamadas à API
+por arquivo, e a tela diz o total antes de começar; dá para desmarcar a reanálise (aí vale só a
+heurística local, que roda sem API) e dá para cancelar no meio.
+
+No fim aparece o percentual do projeto antes e depois, com a mesma ponderação por tamanho do
+relatório, a tabela arquivo por arquivo com a queda de cada um, e **Baixar tudo (.zip)** com os
+arquivos reescritos nos caminhos originais. O .zip é montado na própria página (`js/zip.js`),
+sem dependência.
+
+Arquivo em que o modelo declarou risco de ter mexido em comportamento aparece destacado na
+lista — compare com o original antes de usar.
+
+### Chave da organização
+
+Se a sua chave for da organização e não de um workspace, a API responde 400 pedindo o
+`anthropic-workspace-id`. Preencha o campo **Workspace** na barra do topo com o ID
+(console.anthropic.com → Settings → Workspaces, começa com `wrkspc_`), ou use uma chave criada
+dentro de um workspace, que dispensa o campo.
+
 Para conferir o fluxo sem gastar API: `node tools/test-humanizar.js`.
 
 ## Arquivos

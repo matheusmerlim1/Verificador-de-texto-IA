@@ -16,6 +16,7 @@
 const API_URL   = 'https://api.anthropic.com/v1/messages';
 const LS_KEY    = 'dlm_anthropic_key';
 const LS_MODEL  = 'dlm_model';
+const LS_WS     = 'dlm_workspace_id';   // chave de organização precisa dizer o workspace
 const MIN_WORDS = 20;
 
 const MODELS = {
@@ -44,6 +45,8 @@ const App = {
   // Chave cadastrada tem precedência sobre o que estiver no localStorage.
   apiKey: EMBEDDED_KEY ? CFG.apiKey : (localStorage.getItem(LS_KEY) || ''),
   model:  localStorage.getItem(LS_MODEL) || CFG.model || DEFAULT_MODEL,
+  // Só é necessário quando a chave é da organização e não de um workspace.
+  workspaceId: CFG.workspaceId || localStorage.getItem(LS_WS) || '',
   embedded: EMBEDDED_KEY,
   get keyOk() {
     return this.apiKey.startsWith('sk-ant') && this.apiKey.length > 20;
@@ -159,6 +162,16 @@ function initApiKey() {
     document.dispatchEvent(new CustomEvent('apikeychange'));
   });
 
+  // Workspace: só faz falta com chave de organização, então fica discreto e opcional.
+  const ws = document.getElementById('workspace-input');
+  if (ws) {
+    ws.value = App.workspaceId;
+    ws.addEventListener('input', () => {
+      App.workspaceId = ws.value.trim();
+      localStorage.setItem(LS_WS, App.workspaceId);
+    });
+  }
+
   function setKeyStatus() {
     const key = App.apiKey;
     const ok  = App.keyOk;
@@ -196,6 +209,9 @@ async function callClaude(prompt, opts = {}) {
       'anthropic-version': '2023-06-01',
       // Header obrigatório para chamadas diretas do browser
       'anthropic-dangerous-direct-browser-access': 'true',
+      // Chave de organização não sabe sozinha em que workspace gastar: quando o ID está
+      // preenchido, ele vai junto. Chave já vinculada a um workspace ignora o header.
+      ...(App.workspaceId ? { 'anthropic-workspace-id': App.workspaceId } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -208,6 +224,13 @@ async function callClaude(prompt, opts = {}) {
     } catch (_) { /* corpo não-JSON */ }
 
     if (response.status === 401) throw new Error('Chave de API inválida ou sem permissão. Verifique em console.anthropic.com.');
+    // A mensagem da API é em inglês e não diz onde resolver. Esta diz.
+    if (response.status === 400 && /workspace/i.test(detail)) {
+      throw new Error('Esta chave é da organização e não de um workspace: preencha o campo '
+        + '"Workspace" na barra do topo com o ID do workspace (console.anthropic.com → '
+        + 'Settings → Workspaces, o id começa com wrkspc_). Ou use uma chave criada dentro '
+        + 'de um workspace, que dispensa o campo.');
+    }
     if (response.status === 429) throw new Error('Limite de requisições atingido. Aguarde um momento e tente novamente.');
     if (response.status === 529) throw new Error('API sobrecarregada no momento. Tente novamente em instantes.');
     throw new Error(`Erro da API (${response.status})${detail ? ': ' + detail : ''}`);

@@ -21,6 +21,7 @@ function renderReport(rep) {
   renderDistribution(rep);
   renderFileTable(rep);
   renderGlobalSuggestions(rep);
+  renderProjectHumanize(rep);
   renderFileDetails(rep);
 }
 
@@ -80,7 +81,7 @@ function renderFileTable(rep) {
             <div class="score-mini"><div style="width:${f.score}%;background:${c}"></div></div>
           </div>
         </td>
-        <td class="td-conf">${escHtml(f.error ? 'erro' : f.confidence)}</td>
+        <td class="td-conf">${escHtml(f.error ? 'só heurística' : f.confidence)}</td>
       </tr>`;
   }).join('');
 
@@ -126,6 +127,41 @@ function renderGlobalSuggestions(rep) {
       ${s.rationale ? `<div class="sugg-why">${escHtml(s.rationale)}</div>` : ''}
       <div class="sugg-files">${s.files.slice(0, 6).map(f => `<code>${escHtml(f)}</code>`).join(' ')}${s.files.length > 6 ? ` <span class="muted">+${s.files.length - 6}</span>` : ''}</div>
     </div>`).join('');
+}
+
+/**
+ * Barra da reescrita do projeto: o botão, o alcance e o lugar do resultado.
+ * Fica acima da lista de arquivos, porque é uma ação sobre o conjunto.
+ */
+function renderProjectHumanize(rep) {
+  const alvo = $('rep-humanize');
+  if (!alvo) return;
+  const n = rep.files.length;
+  alvo.innerHTML = `
+    <div class="pz-head">
+      <div>
+        <div class="pz-title">Reescrever o projeto inteiro</div>
+        <div class="pz-sub">${n} arquivo(s). Cada um é reescrito e depois <b>analisado de
+          novo</b>, então o percentual final é medido, não estimado — são duas chamadas à API
+          por arquivo (${n * 2} no total).</div>
+      </div>
+      <div class="pz-controls">
+        <select id="pz-depth" class="hz-depth" title="O quanto a reescrita pode mexer">
+          <option value="conservadora">conservadora</option>
+          <option value="padrao" selected>padrão</option>
+          <option value="profunda">profunda</option>
+        </select>
+        <label class="pz-check"><input type="checkbox" id="pz-reanalyze" checked>
+          reanalisar depois</label>
+        <button class="btn" id="pz-run">✍️ Reescrever tudo</button>
+        <button class="btn btn-sm" id="pz-cancel" style="display:none">Cancelar</button>
+      </div>
+    </div>
+    <div class="pz-progress" id="pz-progress" style="display:none">
+      <div class="pz-bar"><div class="pz-bar-fill" id="pz-bar-fill"></div></div>
+      <div class="pz-status" id="pz-status"></div>
+    </div>
+    <div id="pz-out"></div>`;
 }
 
 function renderFileDetails(rep) {
@@ -256,7 +292,7 @@ function reportToMarkdown(rep) {
   rep.files.forEach(f => {
     const fo = f.forensics;
     const marca = fo && fo.conclusive ? '**MATERIAL**' : (fo && fo.traces.length ? `${fo.traces.length} vestígio(s)` : '—');
-    L.push(`| \`${f.path}\` | ${f.lang} | ${f.stats?.loc ?? '—'} | **${f.score}%** | ${marca} | ${f.error ? 'erro' : f.confidence} |`);
+    L.push(`| \`${f.path}\` | ${f.lang} | ${f.stats?.loc ?? '—'} | **${f.score}%** | ${marca} | ${f.error ? 'só heurística' : f.confidence} |`);
   });
   L.push('');
 
