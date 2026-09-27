@@ -216,6 +216,77 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
     return true;
   });
 
+  await passo("os botões têm cor legível", async () => {
+    const r = JSON.parse(await rodar(`(() => {
+      const ver = el => {
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return { fundo: cs.backgroundColor, cor: cs.color, classe: el.className };
+      };
+      return JSON.stringify({
+        rodar: ver(document.getElementById('pz-run')),
+        arquivo: ver(document.querySelector('[data-hz-run]'))
+      });
+    })()`));
+    // contraste de verdade: o fundo não pode ser igual à cor do texto
+    for (const [quem, b] of Object.entries(r)) {
+      if (!b) throw new Error("não achei o botão: " + quem);
+      if (b.fundo === b.cor) throw new Error(`${quem}: fundo e texto na mesma cor (${b.cor})`);
+      if (!/btn-(primary|ghost)/.test(b.classe))
+        throw new Error(`${quem}: sem variante de cor — classe "${b.classe}"`);
+    }
+    return true;
+  });
+
+  await passo("o alcance explica cada opção", async () => {
+    const ops = JSON.parse(await rodar(`JSON.stringify(
+      [...document.getElementById('pz-depth').options].map(o => o.textContent.trim()))`));
+    if (ops.length !== 3) throw new Error("opções: " + ops.length);
+    for (const o of ops) {
+      if (!o.includes("—")) throw new Error("opção sem explicação: " + o);
+    }
+    return true;
+  });
+
+  await passo("reanálise que falha não apaga o depois", async () => {
+    await rodar(`
+      let n = 0;
+      window.callClaudeJSON = async () => {
+        n++;
+        if (n % 2 === 1) return { rewritten: ["function normalizaPedido(p) {", "  return p;", "}"]
+          .join(String.fromCharCode(10)), changes: [], kept: [], risk: "nenhum" };
+        throw new Error('Erro da API (400): chave sem workspace');
+      };
+      document.getElementById('pz-out').innerHTML = '';
+    `);
+    await rodar(`document.getElementById('pz-run').click()`);
+    for (let i = 0; i < 40; i++) {
+      await esperar(200);
+      if (await rodar(`!!document.querySelector('.pz-result')`)) break;
+    }
+    const r = JSON.parse(await rodar(`(() => {
+      const linhas = [...document.querySelectorAll('.pz-table tbody tr')].map(tr => {
+        const c = [...tr.children].map(td => td.textContent.trim());
+        return { arquivo: c[0], antes: c[1], depois: c[2], queda: c[3] };
+      });
+      const depois = document.querySelectorAll('.pz-score b')[1];
+      return JSON.stringify({ linhas, resumoDepois: depois ? depois.textContent.trim() : null });
+    })()`));
+    if (!r.linhas.length) throw new Error("tabela vazia");
+    for (const l of r.linhas) {
+      if (l.depois === '—')
+        throw new Error("o depois sumiu mesmo com a heurística disponível: " + JSON.stringify(l));
+      if (/workspace|Erro da API/i.test(l.queda))
+        throw new Error("mensagem de erro na coluna queda: " + l.queda);
+      if (!/heurística/i.test(l.depois))
+        throw new Error("não disse que a medida veio da heurística: " + l.depois);
+    }
+    if (!r.resumoDepois || r.resumoDepois === '—')
+      throw new Error("o resumo não trouxe o depois: " + r.resumoDepois);
+    console.log("     (com a reanálise falhando: " + r.linhas[0].antes + " → " + r.linhas[0].depois + ")");
+    return true;
+  });
+
   ws.close(); chrome.kill();
   console.log("ok: " + ok.length);
   ok.forEach(x => console.log("  ✓", x));

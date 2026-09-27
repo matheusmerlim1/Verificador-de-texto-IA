@@ -543,8 +543,8 @@ async function humanizeFile(path, btn) {
         </div>
         ${res.note ? `<div class="hz-note">${escHtml(res.note)}</div>` : ''}
         <div class="hz-actions">
-          <button class="btn btn-sm" data-hz-copy>📋 Copiar</button>
-          <button class="btn btn-sm" data-hz-download="${escHtml(entrada.name)}">⬇️ Baixar cópia</button>
+          <button class="btn btn-ghost btn-sm" data-hz-copy>📋 Copiar</button>
+          <button class="btn btn-ghost btn-sm" data-hz-download="${escHtml(entrada.name)}">⬇️ Baixar cópia</button>
         </div>
         <pre class="hz-code">${escHtml(codigo)}</pre>
         ${mudancas ? `<details class="hz-list"><summary>O que mudou (${(res.changes || []).length})</summary><ul>${mudancas}</ul></details>` : ''}
@@ -650,15 +650,24 @@ async function runProjectHumanize() {
         const h = analyzeHeuristics(item.codigo, entrada.path);
         item.heuristicaDepois = h ? h.score : null;
 
+        // A medida local já vale como "depois". A reanálise, quando dá certo, substitui.
+        item.depois = item.heuristicaDepois;
+        item.medidaDepois = 'heurística';
+
         if (reanalisar && !PZ.abort.signal.aborted) {
           avanca(`Reanalisando ${analise.path}…`);
-          const f2 = runForensics(item.codigo, { mode: 'code' });
-          const ai2 = await callClaudeJSON(
-            buildCodePrompt(entrada, item.codigo, h, f2),
-            { maxTokens: 2000, signal: PZ.abort.signal });
-          item.depois = buildFileResult(entrada, h, ai2, f2).score;
-        } else {
-          item.depois = item.heuristicaDepois;
+          try {
+            const f2 = runForensics(item.codigo, { mode: 'code' });
+            const ai2 = await callClaudeJSON(
+              buildCodePrompt(entrada, item.codigo, h, f2),
+              { maxTokens: 2000, signal: PZ.abort.signal });
+            item.depois = buildFileResult(entrada, h, ai2, f2).score;
+            item.medidaDepois = 'reanalisado';
+          } catch (err2) {
+            if (err2.name === 'AbortError') throw err2;
+            // Falhar a reanálise não apaga a reescrita nem a medida local.
+            item.aviso = 'reanálise falhou: ' + (err2.message || String(err2));
+          }
         }
       } catch (err) {
         item.erro = err.name === 'AbortError' ? 'cancelado' : (err.message || String(err));
@@ -695,13 +704,22 @@ function renderProjectHumanizeResult(reanalisado) {
   const queda  = antes - depois;
 
   const linhas = itens.map(i => {
-    if (i.erro) return `<tr><td>${escHtml(i.path)}</td><td class="num">${i.antes}%</td>
-      <td class="num">—</td><td class="pz-err">${escHtml(i.erro)}</td></tr>`;
+    if (i.erro || i.depois === null) {
+      // A mensagem vai embaixo do caminho, não na coluna "queda": erro não é uma queda,
+      // e mensagem de API não cabe numa célula numérica.
+      return `<tr>
+        <td>${escHtml(i.path)}<div class="pz-err">${escHtml(i.erro || 'não reescrito')}</div></td>
+        <td class="num" style="color:${getColor(i.antes)}">${i.antes}%</td>
+        <td class="num">—</td>
+        <td class="num pz-igual">—</td>
+      </tr>`;
+    }
     const d = i.antes - i.depois;
+    const comoMedido = i.medidaDepois === 'reanalisado' ? '' : ' <span class="pz-tag">heurística</span>';
     return `<tr>
-      <td>${escHtml(i.path)}</td>
+      <td>${escHtml(i.path)}${i.aviso ? `<div class="pz-err">${escHtml(i.aviso)}</div>` : ''}</td>
       <td class="num" style="color:${getColor(i.antes)}">${i.antes}%</td>
-      <td class="num" style="color:${getColor(i.depois)}">${i.depois}%</td>
+      <td class="num" style="color:${getColor(i.depois)}">${i.depois}%${comoMedido}</td>
       <td class="num ${d > 0 ? 'pz-baixou' : 'pz-igual'}">${d > 0 ? '−' + d : (d < 0 ? '+' + (-d) : '±0')}</td>
     </tr>`;
   }).join('');
@@ -718,13 +736,17 @@ function renderProjectHumanizeResult(reanalisado) {
         <div class="pz-queda ${queda > 0 ? 'ok' : 'flat'}">${queda > 0 ? '−' + queda + ' pontos' : '±0'}</div>
       </div>
       <div class="pz-sub">${feitos.length} de ${itens.length} arquivo(s) reescritos${
-        reanalisado ? ', com o percentual medido de novo sobre o código reescrito' :
-                      '. Sem reanálise: o percentual acima é só da heurística local'}.</div>
+        (() => {
+          const rean = feitos.filter(i => i.medidaDepois === 'reanalisado').length;
+          if (!reanalisado) return '. Sem reanálise: o percentual acima é da heurística local';
+          if (rean === feitos.length) return ', com o percentual medido de novo sobre o código reescrito';
+          return `, ${rean} com o percentual reanalisado e ${feitos.length - rean} só pela heurística local`;
+        })()}.</div>
       ${risco.length ? `<div class="hz-erro">${risco.length} arquivo(s) com risco declarado de
         mudança de comportamento: ${risco.map(i => escHtml(i.path)).join(', ')}. Compare com o
         original antes de usar.</div>` : ''}
       <div class="pz-actions">
-        <button class="btn" id="pz-zip">⬇️ Baixar tudo (.zip)</button>
+        <button class="btn btn-primary" id="pz-zip">⬇️ Baixar tudo (.zip)</button>
       </div>
       <table class="pz-table">
         <thead><tr><th>arquivo</th><th class="num">antes</th><th class="num">depois</th><th class="num">queda</th></tr></thead>

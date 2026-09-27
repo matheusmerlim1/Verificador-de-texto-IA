@@ -147,14 +147,14 @@ function renderProjectHumanize(rep) {
       </div>
       <div class="pz-controls">
         <select id="pz-depth" class="hz-depth" title="O quanto a reescrita pode mexer">
-          <option value="conservadora">conservadora</option>
-          <option value="padrao" selected>padrão</option>
-          <option value="profunda">profunda</option>
+          <option value="conservadora">conservadora — só comentários e nomes locais</option>
+          <option value="padrao" selected>padrão — inclui organização interna e tratamento de erro</option>
+          <option value="profunda">profunda — inclui desfazer abstração prematura</option>
         </select>
         <label class="pz-check"><input type="checkbox" id="pz-reanalyze" checked>
           reanalisar depois</label>
-        <button class="btn" id="pz-run">✍️ Reescrever tudo</button>
-        <button class="btn btn-sm" id="pz-cancel" style="display:none">Cancelar</button>
+        <button class="btn btn-primary" id="pz-run">✍️ Reescrever tudo</button>
+        <button class="btn btn-ghost btn-sm" id="pz-cancel" style="display:none">Cancelar</button>
       </div>
     </div>
     <div class="pz-progress" id="pz-progress" style="display:none">
@@ -249,7 +249,7 @@ function renderFileDetails(rep) {
                 <option value="padrao" selected>padrão — inclui organização e tratamento de erro</option>
                 <option value="profunda">profunda — pode desfazer abstração prematura</option>
               </select>
-              <button class="btn btn-sm" data-hz-run="${escHtml(f.path)}">✍️ Gerar versão humanizada</button>
+              <button class="btn btn-primary btn-sm" data-hz-run="${escHtml(f.path)}">✍️ Gerar versão humanizada</button>
             </div>
             <div class="hz-warn">Sai uma cópia na tela, para copiar ou baixar. O arquivo do seu
               projeto não é tocado — e código reescrito por modelo passa pelos seus testes antes

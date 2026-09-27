@@ -1144,28 +1144,28 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
    HUMANIZAR CÓDIGO
    A reescrita de um arquivo, dentro do cartão dele.
    ════════════════════════════════════════════════ */
-.det-humanize { border-top: 1px dashed var(--line, #2a3546); padding-top: 10px; }
+.det-humanize { border-top: 1px dashed var(--border); padding-top: 10px; }
 .hz-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
 .hz-depth { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px;
-  background: var(--surface-2, #1b2331); color: inherit; border: 1px solid var(--line, #2a3546); }
-.hz-warn { font-size: 12px; color: var(--muted, #8b9bb0); margin-bottom: 8px; max-width: 70ch; }
+  background: var(--surface2); color: inherit; border: 1px solid var(--border); }
+.hz-warn { font-size: 12px; color: var(--muted); margin-bottom: 8px; max-width: 70ch; }
 .hz-result { margin-top: 8px; }
 .hz-deltas { display: flex; gap: 10px; align-items: baseline; font-size: 13px; flex-wrap: wrap; }
-.hz-delta.ok { color: var(--ok, #3fb37f); font-weight: 700; }
-.hz-delta.flat { color: var(--muted, #8b9bb0); }
-.hz-note { font-size: 12.5px; color: var(--muted, #8b9bb0); margin: 4px 0 8px; max-width: 75ch; }
+.hz-delta.ok { color: var(--green); font-weight: 700; }
+.hz-delta.flat { color: var(--muted); }
+.hz-note { font-size: 12.5px; color: var(--muted); margin: 4px 0 8px; max-width: 75ch; }
 .hz-actions { display: flex; gap: 8px; margin: 8px 0; }
 .hz-code {
   max-height: 460px; overflow: auto; margin: 0;
   padding: 10px 12px; border-radius: 8px;
-  background: var(--surface-2, #1b2331); border: 1px solid var(--line, #2a3546);
+  background: var(--surface2); border: 1px solid var(--border);
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px;
   line-height: 1.5; white-space: pre; tab-size: 2;
 }
 .hz-list { margin-top: 8px; font-size: 13px; }
 .hz-list ul { margin: 6px 0 0; padding-left: 18px; }
 .hz-list li { margin-bottom: 6px; }
-.hz-why { font-size: 12px; color: var(--muted, #8b9bb0); }
+.hz-why { font-size: 12px; color: var(--muted); }
 .hz-erro {
   font-size: 13px; padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
   background: rgba(226, 96, 78, .12); border: 1px solid rgba(226, 96, 78, .45);
@@ -1178,28 +1178,35 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 /* ════════════════════════════════════════════════
    REESCRITA DO PROJETO INTEIRO
    ════════════════════════════════════════════════ */
-.rep-section--pz { border-top: 1px solid var(--line, #2a3546); padding-top: 14px; }
+.rep-section--pz { border-top: 1px solid var(--border); padding-top: 14px; }
 .pz-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
 .pz-title { font-weight: 700; margin-bottom: 2px; }
-.pz-sub { font-size: 12.5px; color: var(--muted, #8b9bb0); max-width: 70ch; }
+.pz-sub { font-size: 12.5px; color: var(--muted); max-width: 70ch; }
 .pz-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.pz-check { font-size: 12.5px; color: var(--muted, #8b9bb0); display: inline-flex; gap: 5px; align-items: center; }
+.pz-check { font-size: 12.5px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
 .pz-progress { margin-top: 10px; }
-.pz-bar { height: 6px; border-radius: 3px; background: var(--surface-2, #1b2331); overflow: hidden; }
-.pz-bar-fill { height: 100%; width: 0; background: var(--accent, #4a9eff); transition: width .2s; }
-.pz-status { font-size: 12px; color: var(--muted, #8b9bb0); margin-top: 4px; }
+.pz-bar { height: 6px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+.pz-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.pz-status { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .pz-result { margin-top: 12px; }
 .pz-scores { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .pz-score { display: flex; gap: 6px; align-items: baseline; }
 .pz-score b { font-size: 24px; font-family: ui-monospace, "Cascadia Mono", monospace; }
-.pz-score-lab { font-size: 12px; color: var(--muted, #8b9bb0); }
-.pz-arrow { color: var(--muted, #8b9bb0); }
-.pz-queda.ok { color: var(--ok, #3fb37f); font-weight: 700; }
-.pz-queda.flat { color: var(--muted, #8b9bb0); }
+.pz-score-lab { font-size: 12px; color: var(--muted); }
+.pz-arrow { color: var(--muted); }
+.pz-queda.ok { color: var(--green); font-weight: 700; }
+.pz-queda.flat { color: var(--muted); }
 .pz-actions { margin: 10px 0; }
 .pz-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
-.pz-table th, .pz-table td { padding: 5px 8px; border-bottom: 1px solid var(--line, #2a3546); text-align: left; }
-.pz-table th { color: var(--muted, #8b9bb0); font-weight: 600; font-size: 12px; }
+.pz-table th, .pz-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.pz-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .pz-table .num { text-align: right; font-family: ui-monospace, "Cascadia Mono", monospace; }
-.pz-baixou { color: var(--ok, #3fb37f); font-weight: 700; }
-.pz-igual, .pz-err { color: var(--muted, #8b9bb0); }
+.pz-baixou { color: var(--green); font-weight: 700; }
+.pz-igual, .pz-err { color: var(--muted); }
+
+/* Como o "depois" foi medido, quando não foi pela reanálise. */
+.pz-tag {
+  font-family: var(--mono); font-size: .55rem; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 2px; padding: 0 .3rem; margin-left: .3rem;
+}
