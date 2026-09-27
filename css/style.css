@@ -133,7 +133,7 @@ header {
    ════════════════════════════════ */
 main {
   display: grid;
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: minmax(0, 1fr) 420px;
   min-height: calc(100vh - 115px);
 }
 
@@ -459,7 +459,7 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
    RESPONSIVE
    ════════════════════════════════ */
 @media (max-width: 820px) {
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: minmax(0, 1fr); }
   .result-side { border-top: 1px solid var(--border); min-height: 400px; }
   header, .apikey-bar, .input-side { padding-left: 1.25rem; padding-right: 1.25rem; }
   .result-side { padding: 1.5rem 1.25rem; }
@@ -495,7 +495,7 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 
 .mode-panel { display: none; min-height: calc(100vh - 160px); }
 .mode-panel.active { display: grid; }
-.mode-panel[data-mode="code"] { grid-template-columns: 400px 1fr; }
+.mode-panel[data-mode="code"] { grid-template-columns: 400px minmax(0, 1fr); }
 
 .model-select,
 .tone-select {
@@ -970,12 +970,12 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
    RESPONSIVO (novos modos)
    ════════════════════════════════ */
 @media (max-width: 1100px) {
-  .mode-panel[data-mode="code"] { grid-template-columns: 340px 1fr; }
+  .mode-panel[data-mode="code"] { grid-template-columns: 340px minmax(0, 1fr); }
   .td-path { max-width: 200px; }
 }
 
 @media (max-width: 820px) {
-  .mode-panel[data-mode="code"] { grid-template-columns: 1fr; }
+  .mode-panel[data-mode="code"] { grid-template-columns: minmax(0, 1fr); }
   .tabs { padding: 0 1.25rem; }
   .rep-head { flex-direction: column; }
   .file-list { max-height: 240px; }
@@ -1231,6 +1231,14 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 .sugg-files code, .det-humanize code { overflow-wrap: anywhere; max-width: 100%; }
 .det-path { overflow-wrap: anywhere; }
 .hz-out, .pz-result { max-width: 100%; overflow-x: hidden; }
+
+
+/* ── Por que minmax(0, 1fr) e não 1fr ──
+   Uma faixa `1fr` equivale a `minmax(auto, 1fr)`: o mínimo dela é o min-content do que está
+   dentro. Com 131 arquivos de caminho longo, o min-content da coluna do relatório é enorme,
+   a faixa cresce além do espaço disponível e o grid inteiro transborda — a página ganha
+   rolagem lateral e o conteúdo sai da caixa. `minmax(0, …)` permite que a coluna seja menor
+   que o conteúdo, e aí a quebra de texto de dentro passa a valer. */
 
 /* ── Trava contra conteúdo que estoura a caixa ──
    Um caminho de arquivo não tem ponto de quebra natural, e item de flex/grid não encolhe

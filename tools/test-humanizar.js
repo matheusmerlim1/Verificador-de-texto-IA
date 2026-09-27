@@ -308,11 +308,10 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
   await passo("caminho longo não estoura a caixa", async () => {
     // O caso que estoura de verdade é o caminho sem ponto de quebra: um item flex não
     // encolhe abaixo do min-content, e sem overflow-wrap o min-content é o caminho inteiro.
-    const longos = [
-      "G1/frontend/src/Dominio/produtos/RepositorioDeIngredientesEIngredientesDaPizzaEmBancoDeDadosRelacionalComCacheLocal.ts",
-      "G1/backend/src/infra/persistencia/RepositorioDePedidosEItensDoPedidoEmBancoRelacionalComTransacao.php",
-      "G1/backend/src/Excessos/DominioExceptionDeValidacaoDeEntradaDoUsuarioNaCriacaoDePedido.php"
-    ];
+    // O caso real: projeto grande, muitos caminhos longos, e a sugestão do projeto listando
+    // dezenas de arquivos. É o volume que faz a coluna do relatório crescer.
+    const longos = Array.from({ length: 131 }, (_, i) =>
+      `G1/backend/src/Produtos/RepositorioDeIngredienteEPizza${i}.php`);
     await rodar(`
       const longos = ${JSON.stringify(longos)};
       App.apiKey = 'sk-ant-chave-de-mentira-para-o-teste-0000';
@@ -331,6 +330,8 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
                         rationale: "Densidade uniformemente alta é marca registrada de LLM." }],
         summary: "", forensics: null, error: null
       }));
+      document.querySelector('.tab[data-mode="code"]').click();
+      renderFileList();
       renderReport(buildProjectReport(CodeState.results));
       initHumanizeButtons(); initProjectHumanize();
       window.callClaudeJSON = async () => {
@@ -357,9 +358,11 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
       document.querySelectorAll('.report *').forEach(el => {
         const r = el.getBoundingClientRect();
         if (r.width && r.right > limite + 2) fora.push('passa da janela: ' + (el.className || el.tagName));
-        // ignora quem rola de propósito (o bloco de código reescrito)
-        const rola = getComputedStyle(el).overflowX;
-        if (rola === 'auto' || rola === 'scroll') return;
+        const cs = getComputedStyle(el);
+        // rolar de propósito (o bloco de código) e truncar com reticências (o caminho na
+        // tabela) são decisões, não defeitos — o defeito é o conteúdo vazar sem aviso
+        if (cs.overflowX === 'auto' || cs.overflowX === 'scroll') return;
+        if (cs.textOverflow === 'ellipsis') return;
         if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0)
           fora.push('cortado: ' + (el.className || el.tagName) + ' (' + el.scrollWidth + '>' + el.clientWidth + ')');
       });
@@ -375,13 +378,15 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
 
     // a tela larga primeiro
     const largo = await medir();
-    if (largo.linhas !== 3) throw new Error("linhas na tabela: " + largo.linhas);
+    if (largo.linhas !== 131) throw new Error("linhas na tabela: " + largo.linhas);
     // a mensagem longa é a mesma para todos: uma vez só (o texto contém "workspace" 3x)
     if (largo.vezes > 3) throw new Error("a mensagem se repetiu por arquivo (" + largo.vezes + " ocorrências de 'workspace')");
 
-    // e a estreita, que é onde o caminho longo estoura
+    // As duas colunas do modo código só existem acima de 820px — e é justamente lá que a
+    // faixa 1fr pode crescer além do espaço e empurrar a página. Abaixo disso o layout já
+    // vira uma coluna e o problema não aparece.
     await send("Emulation.setDeviceMetricsOverride",
-      { width: 760, height: 900, deviceScaleFactor: 1, mobile: false });
+      { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await esperar(500);
     const estreito = await medir();
     await send("Emulation.clearDeviceMetricsOverride");
