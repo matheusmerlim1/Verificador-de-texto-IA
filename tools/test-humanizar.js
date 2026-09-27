@@ -396,6 +396,21 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
       throw new Error(`a ${estreito.largura}px a página ganhou ${estreito.rolagem}px de rolagem lateral`);
     if (estreito.fora.length)
       throw new Error(`a ${estreito.largura}px passa da largura: ` + estreito.fora.join(" | "));
+
+    // O relatório usa a página inteira: o modo código é de uma coluna só, e é isso que dá
+    // espaço para caminho de arquivo, chips e tabela sem empurrar nada para fora.
+    const largura = JSON.parse(await rodar(`(() => {
+      const doc = document.documentElement;
+      const rep = document.querySelector('.mode-panel[data-mode="code"] .result-side');
+      return JSON.stringify({
+        janela: doc.clientWidth,
+        relatorio: rep ? Math.round(rep.getBoundingClientRect().width) : 0,
+        colunas: getComputedStyle(document.querySelector('.mode-panel[data-mode="code"]')).gridTemplateColumns
+      });
+    })()`));
+    if (largura.relatorio < largura.janela * 0.9)
+      throw new Error(`o relatório ficou com ${largura.relatorio}px de ${largura.janela}px — `
+        + `ainda está dividindo a largura (colunas: ${largura.colunas})`);
     return true;
   });
 

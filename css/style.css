@@ -495,7 +495,17 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 
 .mode-panel { display: none; min-height: calc(100vh - 160px); }
 .mode-panel.active { display: grid; }
-.mode-panel[data-mode="code"] { grid-template-columns: 400px minmax(0, 1fr); }
+/* Uma coluna só: a escolha dos arquivos em cima, o relatório embaixo, com a largura
+   inteira. Em duas colunas o relatório ficava com ~60% da tela para mostrar caminho de
+   arquivo, chips, tabela e código — estreito demais, e era o que empurrava o conteúdo
+   para fora da caixa. */
+.mode-panel[data-mode="code"] { grid-template-columns: minmax(0, 1fr); }
+.mode-panel[data-mode="code"] .input-side {
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+}
+/* a lista de arquivos não pode empurrar o relatório para baixo da dobra */
+.mode-panel[data-mode="code"] .file-list { max-height: 260px; }
 
 .model-select,
 .tone-select {
@@ -970,7 +980,7 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
    RESPONSIVO (novos modos)
    ════════════════════════════════ */
 @media (max-width: 1100px) {
-  .mode-panel[data-mode="code"] { grid-template-columns: 340px minmax(0, 1fr); }
+  /* o modo código já é de uma coluna só */
   .td-path { max-width: 200px; }
 }
 
