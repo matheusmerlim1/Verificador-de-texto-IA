@@ -198,6 +198,24 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
     })()`));
     if (r.falta) throw new Error("não montou o resumo do projeto");
     if (r.linhas !== 2) throw new Error("linhas na tabela: " + r.linhas);
+
+    // e de novo numa janela estreita, que é onde o caminho longo costuma estourar
+    await send("Emulation.setDeviceMetricsOverride",
+      { width: 820, height: 900, deviceScaleFactor: 1, mobile: false });
+    await esperar(400);
+    const estreito = JSON.parse(await rodar(`(() => {
+      const doc = document.documentElement;
+      const fora = [...document.querySelectorAll('.pz-result *, .rep-section *')]
+        .filter(el => el.getBoundingClientRect().right > doc.clientWidth + 2)
+        .map(el => (el.className || el.tagName));
+      return JSON.stringify({ rolagem: doc.scrollWidth - doc.clientWidth, fora: fora.slice(0, 4) });
+    })()`));
+    await send("Emulation.clearDeviceMetricsOverride");
+    if (estreito.rolagem > 2)
+      throw new Error("a 820px a página ganhou rolagem lateral de " + estreito.rolagem + "px");
+    if (estreito.fora.length)
+      throw new Error("a 820px passa da largura: " + estreito.fora.join(" | "));
+
     if (!r.temZip) throw new Error("faltou o botão de baixar o zip");
     if (r.antesDepois[0] === r.antesDepois[1]) throw new Error("antes e depois iguais: " + r.antesDepois.join(" → "));
     console.log("     (projeto: " + r.antesDepois.join(" → ") + ", " + r.queda.trim() + ")");
@@ -284,6 +302,95 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
     if (!r.resumoDepois || r.resumoDepois === '—')
       throw new Error("o resumo não trouxe o depois: " + r.resumoDepois);
     console.log("     (com a reanálise falhando: " + r.linhas[0].antes + " → " + r.linhas[0].depois + ")");
+    return true;
+  });
+
+  await passo("caminho longo não estoura a caixa", async () => {
+    // O caso que estoura de verdade é o caminho sem ponto de quebra: um item flex não
+    // encolhe abaixo do min-content, e sem overflow-wrap o min-content é o caminho inteiro.
+    const longos = [
+      "G1/frontend/src/Dominio/produtos/RepositorioDeIngredientesEIngredientesDaPizzaEmBancoDeDadosRelacionalComCacheLocal.ts",
+      "G1/backend/src/infra/persistencia/RepositorioDePedidosEItensDoPedidoEmBancoRelacionalComTransacao.php",
+      "G1/backend/src/Excessos/DominioExceptionDeValidacaoDeEntradaDoUsuarioNaCriacaoDePedido.php"
+    ];
+    await rodar(`
+      const longos = ${JSON.stringify(longos)};
+      App.apiKey = 'sk-ant-chave-de-mentira-para-o-teste-0000';
+      CodeState.projectName = 'g1';
+      CodeState.files = longos.map((p, i) => ({
+        path: p, name: p.split('/').pop(), lang: p.endsWith('.ts') ? 'typescript' : 'php',
+        size: 900 - i * 100, include: true, file: new File(["const x = 1;"], "a.ts")
+      }));
+      CodeState.results = CodeState.files.map(f => ({
+        path: f.path, name: f.name, lang: f.lang, size: f.size, score: 70,
+        heuristicScore: 60, aiScore: 75, confidence: "media", verdict: "", stats: null,
+        signals: [], hotspots: [],
+        // sugestões com MUITOS arquivos: é o bloco que estourou na tela
+        suggestions: [{ action: "Reduzir a densidade de comentários para a faixa de 5–12%",
+                        where: f.path, impact: "alto", effort: "baixo",
+                        rationale: "Densidade uniformemente alta é marca registrada de LLM." }],
+        summary: "", forensics: null, error: null
+      }));
+      renderReport(buildProjectReport(CodeState.results));
+      initHumanizeButtons(); initProjectHumanize();
+      window.callClaudeJSON = async () => {
+        throw new Error('Esta chave é da organização e não de um workspace: preencha o campo '
+          + '"Workspace" na barra do topo com o ID do workspace (console.anthropic.com → '
+          + 'Settings → Workspaces, o id começa com wrkspc_). Ou use uma chave criada dentro '
+          + 'de um workspace, que dispensa o campo.');
+      };
+      document.getElementById('pz-out').innerHTML = '';
+    `);
+    await esperar(200);
+    await rodar(`document.getElementById('pz-run').click()`);
+    for (let i = 0; i < 40; i++) {
+      await esperar(200);
+      if (await rodar(`!!document.querySelector('.pz-result')`)) break;
+    }
+
+    const medir = async () => JSON.parse(await rodar(`(() => {
+      const doc = document.documentElement;
+      const limite = doc.clientWidth;
+      // Dois sintomas diferentes: passar da largura da janela (rolagem) e ter conteúdo
+      // maior que a própria caixa (corte). O que o usuário viu foi o segundo.
+      const fora = [];
+      document.querySelectorAll('.report *').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.right > limite + 2) fora.push('passa da janela: ' + (el.className || el.tagName));
+        // ignora quem rola de propósito (o bloco de código reescrito)
+        const rola = getComputedStyle(el).overflowX;
+        if (rola === 'auto' || rola === 'scroll') return;
+        if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0)
+          fora.push('cortado: ' + (el.className || el.tagName) + ' (' + el.scrollWidth + '>' + el.clientWidth + ')');
+      });
+      const res = document.querySelector('.pz-result');
+      return JSON.stringify({
+        largura: limite,
+        rolagem: doc.scrollWidth - limite,
+        fora: fora.slice(0, 5),
+        vezes: res ? (res.textContent.match(/workspace/g) || []).length : 0,
+        linhas: document.querySelectorAll('.pz-table tbody tr').length
+      });
+    })()`));
+
+    // a tela larga primeiro
+    const largo = await medir();
+    if (largo.linhas !== 3) throw new Error("linhas na tabela: " + largo.linhas);
+    // a mensagem longa é a mesma para todos: uma vez só (o texto contém "workspace" 3x)
+    if (largo.vezes > 3) throw new Error("a mensagem se repetiu por arquivo (" + largo.vezes + " ocorrências de 'workspace')");
+
+    // e a estreita, que é onde o caminho longo estoura
+    await send("Emulation.setDeviceMetricsOverride",
+      { width: 760, height: 900, deviceScaleFactor: 1, mobile: false });
+    await esperar(500);
+    const estreito = await medir();
+    await send("Emulation.clearDeviceMetricsOverride");
+    await esperar(200);
+
+    if (estreito.rolagem > 2)
+      throw new Error(`a ${estreito.largura}px a página ganhou ${estreito.rolagem}px de rolagem lateral`);
+    if (estreito.fora.length)
+      throw new Error(`a ${estreito.largura}px passa da largura: ` + estreito.fora.join(" | "));
     return true;
   });
 

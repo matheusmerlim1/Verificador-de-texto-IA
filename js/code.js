@@ -705,24 +705,40 @@ function renderProjectHumanizeResult(reanalisado) {
 
   const linhas = itens.map(i => {
     if (i.erro || i.depois === null) {
-      // A mensagem vai embaixo do caminho, não na coluna "queda": erro não é uma queda,
-      // e mensagem de API não cabe numa célula numérica.
+      // A mensagem completa fica no aviso acima da tabela: quando a causa é a mesma para
+      // todos (chave sem workspace, por exemplo), repeti-la em cada linha vira parede.
       return `<tr>
-        <td>${escHtml(i.path)}<div class="pz-err">${escHtml(i.erro || 'não reescrito')}</div></td>
+        <td class="pz-arq">${escHtml(i.path)}</td>
         <td class="num" style="color:${getColor(i.antes)}">${i.antes}%</td>
         <td class="num">—</td>
-        <td class="num pz-igual">—</td>
+        <td class="num pz-igual">não reescrito</td>
       </tr>`;
     }
     const d = i.antes - i.depois;
     const comoMedido = i.medidaDepois === 'reanalisado' ? '' : ' <span class="pz-tag">heurística</span>';
     return `<tr>
-      <td>${escHtml(i.path)}${i.aviso ? `<div class="pz-err">${escHtml(i.aviso)}</div>` : ''}</td>
+      <td class="pz-arq">${escHtml(i.path)}${i.aviso ? '<span class="pz-tag">reanálise falhou</span>' : ''}</td>
       <td class="num" style="color:${getColor(i.antes)}">${i.antes}%</td>
       <td class="num" style="color:${getColor(i.depois)}">${i.depois}%${comoMedido}</td>
       <td class="num ${d > 0 ? 'pz-baixou' : 'pz-igual'}">${d > 0 ? '−' + d : (d < 0 ? '+' + (-d) : '±0')}</td>
     </tr>`;
   }).join('');
+
+  // Agrupa as falhas por mensagem: a mesma causa não precisa ser dita várias vezes.
+  const falhas = new Map();
+  itens.forEach(i => {
+    const msg = i.erro || i.aviso;
+    if (!msg) return;
+    if (!falhas.has(msg)) falhas.set(msg, []);
+    falhas.get(msg).push(i.path);
+  });
+  const blocoFalhas = [...falhas].map(([msg, arquivos]) => `
+    <div class="hz-erro">
+      <div class="pz-falha-msg">${escHtml(msg)}</div>
+      <div class="pz-falha-arqs">${arquivos.length} arquivo(s): ${
+        arquivos.slice(0, 8).map(a => `<code>${escHtml(a)}</code>`).join(' ')}${
+        arquivos.length > 8 ? ` <span class="muted">+${arquivos.length - 8}</span>` : ''}</div>
+    </div>`).join('');
 
   const risco = itens.filter(i => i.risk === 'medio' || i.risk === 'alto');
   saida.innerHTML = `
@@ -742,6 +758,7 @@ function renderProjectHumanizeResult(reanalisado) {
           if (rean === feitos.length) return ', com o percentual medido de novo sobre o código reescrito';
           return `, ${rean} com o percentual reanalisado e ${feitos.length - rean} só pela heurística local`;
         })()}.</div>
+      ${blocoFalhas}
       ${risco.length ? `<div class="hz-erro">${risco.length} arquivo(s) com risco declarado de
         mudança de comportamento: ${risco.map(i => escHtml(i.path)).join(', ')}. Compare com o
         original antes de usar.</div>` : ''}

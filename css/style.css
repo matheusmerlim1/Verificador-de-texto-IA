@@ -1210,3 +1210,34 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
   letter-spacing: .05em; color: var(--muted); border: 1px solid var(--border);
   border-radius: 2px; padding: 0 .3rem; margin-left: .3rem;
 }
+
+/* ── Caminhos longos não podem esticar a caixa ──
+   Um caminho como G1/frontend/src/Dominio/produtos/RepositorioPizzaEmBDR.ts é maior que a
+   coluna. Sem permissão de quebra, ele empurra a tabela e põe a página em rolagem lateral. */
+.pz-table { table-layout: fixed; }
+.pz-table th:first-child, .pz-table td:first-child { width: 55%; }
+.pz-arq {
+  font-family: var(--mono); font-size: .66rem;
+  overflow-wrap: anywhere; word-break: break-word; white-space: normal;
+}
+.pz-falha-msg { font-family: var(--sans); font-size: .74rem; line-height: 1.5; max-width: 72ch; }
+.pz-falha-arqs { margin-top: .35rem; font-size: .6rem; color: var(--muted); }
+.pz-falha-arqs code {
+  font-family: var(--mono); background: var(--surface2); padding: .05rem .25rem;
+  border-radius: 2px; overflow-wrap: anywhere;
+}
+
+/* O mesmo vale para os chips de arquivo das sugestões e para o caminho no cartão. */
+.sugg-files code, .det-humanize code { overflow-wrap: anywhere; max-width: 100%; }
+.det-path { overflow-wrap: anywhere; }
+.hz-out, .pz-result { max-width: 100%; overflow-x: hidden; }
+
+/* ── Trava contra conteúdo que estoura a caixa ──
+   Um caminho de arquivo não tem ponto de quebra natural, e item de flex/grid não encolhe
+   abaixo do min-content: basta um caminho longo para a coluna inteira crescer e o texto
+   sair da caixa. Estas três regras impedem isso em qualquer largura de janela. */
+.report, .report * { min-width: 0; }
+.report { max-width: 100%; }
+.report code, .sugg-files code, .pz-arq, .det-path, .hotspot code, .sugg-where {
+  overflow-wrap: anywhere; word-break: break-word;
+}
