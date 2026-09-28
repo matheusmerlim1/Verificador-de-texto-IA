@@ -397,20 +397,20 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
     if (estreito.fora.length)
       throw new Error(`a ${estreito.largura}px passa da largura: ` + estreito.fora.join(" | "));
 
-    // O relatório usa a página inteira: o modo código é de uma coluna só, e é isso que dá
-    // espaço para caminho de arquivo, chips e tabela sem empurrar nada para fora.
-    const largura = JSON.parse(await rodar(`(() => {
-      const doc = document.documentElement;
-      const rep = document.querySelector('.mode-panel[data-mode="code"] .result-side');
-      return JSON.stringify({
-        janela: doc.clientWidth,
-        relatorio: rep ? Math.round(rep.getBoundingClientRect().width) : 0,
-        colunas: getComputedStyle(document.querySelector('.mode-panel[data-mode="code"]')).gridTemplateColumns
-      });
+    // O formato é de duas colunas, de propósito. O que não pode é a soma das colunas passar
+    // da janela: a faixa do relatório precisa ser minmax(0, …) para poder encolher.
+    // A medida sai junto com a largura da janela, na mesma leitura — medir depois de
+    // desfazer o redimensionamento compara com a janela errada.
+    const grid = JSON.parse(await rodar(`(() => {
+      const el = document.querySelector('.mode-panel[data-mode="code"]');
+      const cols = getComputedStyle(el).gridTemplateColumns;
+      const soma = cols.split(/\s+/).map(parseFloat).filter(n => !isNaN(n))
+        .reduce((t, n) => t + n, 0);
+      return JSON.stringify({ cols, soma: Math.round(soma),
+        janela: document.documentElement.clientWidth });
     })()`));
-    if (largura.relatorio < largura.janela * 0.9)
-      throw new Error(`o relatório ficou com ${largura.relatorio}px de ${largura.janela}px — `
-        + `ainda está dividindo a largura (colunas: ${largura.colunas})`);
+    if (grid.soma > grid.janela + 2)
+      throw new Error(`as colunas somam ${grid.soma}px numa janela de ${grid.janela} (${grid.cols})`);
     return true;
   });
 
