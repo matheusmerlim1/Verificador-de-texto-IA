@@ -765,10 +765,10 @@ function renderProjectHumanizeResult(reanalisado) {
       <div class="pz-actions">
         <button class="btn btn-primary" id="pz-zip">⬇️ Baixar tudo (.zip)</button>
       </div>
-      <table class="pz-table">
+      <div class="pz-table-wrap"><table class="pz-table">
         <thead><tr><th>arquivo</th><th class="num">antes</th><th class="num">depois</th><th class="num">queda</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>
+      </table></div>
       <div class="hz-warn">O .zip traz só os arquivos reescritos, com o caminho original. Nada
         foi gravado no seu projeto — a comparação e os testes são com você.</div>
     </div>`;

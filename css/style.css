@@ -1219,8 +1219,10 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 /* ── Caminhos longos não podem esticar a caixa ──
    Um caminho como G1/frontend/src/Dominio/produtos/RepositorioPizzaEmBDR.ts é maior que a
    coluna. Sem permissão de quebra, ele empurra a tabela e põe a página em rolagem lateral. */
-.pz-table { table-layout: fixed; }
-.pz-table th:first-child, .pz-table td:first-child { width: 55%; }
+/* Larguras fixas apertavam a última coluna até "não reescrito" vazar da célula.
+   Com a largura vindo do conteúdo, cada coluna fica do tamanho que precisa, e o
+   caminho do arquivo — que quebra em qualquer ponto — cede o espaço que sobrar. */
+.pz-table th:first-child, .pz-table td:first-child { width: 100%; }
 .pz-arq {
   font-family: var(--mono); font-size: .66rem;
   overflow-wrap: anywhere; word-break: break-word; white-space: normal;
@@ -1253,4 +1255,26 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 .report { max-width: 100%; }
 .report code, .sugg-files code, .pz-arq, .det-path, .hotspot code, .sugg-where {
   overflow-wrap: anywhere; word-break: break-word;
+}
+
+/* ── Tabela larga em tela estreita ────────────────────────────────────────────
+   Tabela não encolhe abaixo do conteúdo mínimo dela: as colunas de linguagem,
+   percentual e confiança não quebram, então abaixo de ~1000px a tabela ficava
+   mais larga que a caixa e empurrava o relatório inteiro para fora — era isso
+   que saía da box. Aqui ela passa a rolar de lado dentro do próprio quadro, em
+   vez de esticar a página. Em tela larga não aparece barra nenhuma. */
+#rep-table, .pz-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.report-table { min-width: 460px; }
+.pz-table-wrap { margin-top: 8px; }
+.pz-table { min-width: 420px; margin-top: 0; }
+/* os números não podem quebrar no meio: "12% → 7%" numa linha só */
+.pz-table .num, .report-table .td-score { white-space: nowrap; }
+
+@media (max-width: 1000px) {
+  /* com menos espaço, o caminho do arquivo cede primeiro — ele é o que dá para cortar */
+  .td-path { max-width: 220px; }
 }
