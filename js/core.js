@@ -223,6 +223,86 @@ function initApiKey() {
  * @param {string} prompt
  * @param {{maxTokens?: number, system?: string, signal?: AbortSignal}} opts
  */
+// ════════════════════════════════════════════════
+//  DIAGNÓSTICO DAS CHAMADAS
+// ════════════════════════════════════════════════
+/**
+ * Guarda as últimas chamadas à API para que uma falha possa ser investigada em vez de
+ * adivinhada. Sem isto, tudo o que sobrava de um erro era uma frase — não dava para saber
+ * qual chave foi usada, se o cabeçalho do workspace foi junto, nem o request-id que o
+ * suporte pede.
+ *
+ * A chave nunca entra aqui inteira: só o prefixo, os quatro últimos caracteres e o
+ * tamanho. Dá para saber QUAL chave é sem expor nenhuma.
+ */
+const DIAG = [];
+const DIAG_MAX = 50;
+
+/** Identifica a chave sem revelá-la. */
+function marcaDaChave(chave) {
+  if (!chave) return '(vazia)';
+  const limpa = String(chave).trim();
+  return limpa.slice(0, 7) + '…' + limpa.slice(-4) + ' (' + limpa.length + ' caracteres)';
+}
+
+function registrarDiag(entrada) {
+  DIAG.push({ quando: new Date().toISOString(), ...entrada });
+  if (DIAG.length > DIAG_MAX) DIAG.shift();
+}
+
+/** O registro em texto, pronto para copiar e mandar para quem for ajudar. */
+function diagnosticoTexto() {
+  if (!DIAG.length) return 'Nenhuma chamada à API foi feita nesta sessão.';
+  const cab = [
+    'DIAGNÓSTICO — Verificador de texto IA',
+    'gerado em: ' + new Date().toISOString(),
+    'chave: ' + marcaDaChave(App.apiKey),
+    'campo Workspace: ' + (App.workspaceId ? App.workspaceId : '(vazio)'),
+    'workspace que a API respondeu: ' + (App.workspaceDaResposta || '(a API não informou)'),
+    'modelo: ' + App.model,
+    'endereço: ' + API_URL,
+    'chamadas registradas: ' + DIAG.length,
+    ''
+  ].join('\n');
+
+  const linhas = DIAG.map((d, i) => {
+    const partes = [
+      '[' + (i + 1) + '] ' + d.quando,
+      '    situação: ' + (d.status === 'rede' ? 'não chegou a responder' : 'HTTP ' + d.status),
+      '    levou: ' + d.ms + ' ms',
+      '    cabeçalho anthropic-workspace-id enviado: ' + (d.mandouWorkspace || 'não'),
+      '    request-id: ' + (d.requestId || '(sem)'),
+      '    workspace da resposta: ' + (d.workspaceResposta || '(sem)')
+    ];
+    if (d.detalhe) partes.push('    a API respondeu: ' + d.detalhe);
+    if (d.erro)    partes.push('    falha: ' + d.erro);
+    return partes.join('\n');
+  });
+
+  return cab + linhas.join('\n\n');
+}
+
+/**
+ * Monta a mensagem de erro sem esconder o que a API disse.
+ *
+ * A versão anterior trocava o texto da API por um palpite meu. Quando o palpite errava — e
+ * errava, porque mais de uma causa de 400 fala em workspace — a pessoa ficava sem nenhuma
+ * pista do problema real, seguindo uma instrução que nunca ia funcionar. Agora a dica é
+ * acréscimo, nunca substituição, e o request-id vai junto para dar em suporte.
+ */
+function montarErro(dica, detalhe, requestId) {
+  const partes = [dica];
+  if (detalhe) partes.push('A API respondeu: "' + detalhe + '"');
+  if (requestId) partes.push('(request-id: ' + requestId + ')');
+  const err = new Error(partes.join(' '));
+  // A causa, sem o request-id. O identificador muda a cada chamada, então usá-lo para
+  // agrupar transformaria uma falha repetida em 72 avisos diferentes na tela.
+  err.causa = dica + (detalhe ? ' | ' + detalhe : '');
+  err.detalhe = detalhe;
+  err.requestId = requestId;
+  return err;
+}
+
 async function callClaude(prompt, opts = {}) {
   const body = {
     model:      App.model,
@@ -231,7 +311,10 @@ async function callClaude(prompt, opts = {}) {
   };
   if (opts.system) body.system = opts.system;
 
-  const response = await fetch(API_URL, {
+  const comecou = Date.now();
+  let response;
+  try {
+    response = await fetch(API_URL, {
     method:  'POST',
     signal:  opts.signal,
     headers: {
@@ -245,7 +328,25 @@ async function callClaude(prompt, opts = {}) {
       ...(App.workspaceId ? { 'anthropic-workspace-id': App.workspaceId } : {}),
     },
     body: JSON.stringify(body),
-  });
+    });
+  } catch (erroDeRede) {
+    // Falha antes de haver resposta: CORS, rede caída, chamada cancelada.
+    registrarDiag({ status: 'rede', ms: Date.now() - comecou,
+      mandouWorkspace: App.workspaceId ? 'sim (' + App.workspaceId + ')' : 'não',
+      erro: erroDeRede.name + ': ' + erroDeRede.message });
+    throw erroDeRede;
+  }
+
+  // Em que workspace a chave caiu. A API devolve isso em toda resposta autenticada, e é
+  // o jeito documentado de descobrir onde o consumo está sendo contado.
+  // O ?. não é decoração: se ler cabeçalho falhasse, a exceção viria daqui e esconderia
+  // o erro de verdade da API — exatamente o que este bloco existe para evitar.
+  App.workspaceDaResposta = response.headers?.get('anthropic-workspace-id') || '';
+  const requestId = response.headers?.get('request-id') || '';
+  const anotar = detalhe => registrarDiag({
+    status: response.status, ms: Date.now() - comecou,
+    mandouWorkspace: App.workspaceId ? 'sim (' + App.workspaceId + ')' : 'não',
+    requestId, workspaceResposta: App.workspaceDaResposta, detalhe });
 
   if (!response.ok) {
     let detail = '';
@@ -253,22 +354,53 @@ async function callClaude(prompt, opts = {}) {
       const err = await response.json();
       detail = err?.error?.message || '';
     } catch (_) { /* corpo não-JSON */ }
+    anotar(detail);
 
-    if (response.status === 401) throw new Error('Chave de API inválida ou sem permissão. Verifique em console.anthropic.com.');
-    // A mensagem da API é em inglês e não diz onde resolver. Esta diz.
-    if (response.status === 400 && /workspace/i.test(detail)) {
-      // Mandar preencher um campo sem mostrar onde ele está não ajuda ninguém.
-      pedirWorkspace();
-      throw new Error('Esta chave é da organização e não de um workspace: preencha o campo '
-        + '"Workspace" na barra do topo com o ID do workspace (console.anthropic.com → '
-        + 'Settings → Workspaces, o id começa com wrkspc_). Ou use uma chave criada dentro '
-        + 'de um workspace, que dispensa o campo.');
+    if (response.status === 401) {
+      throw (montarErro('Chave de API inválida, revogada ou sem permissão. '
+        + 'Confira em console.anthropic.com.', detail, requestId));
     }
-    if (response.status === 429) throw new Error('Limite de requisições atingido. Aguarde um momento e tente novamente.');
-    if (response.status === 529) throw new Error('API sobrecarregada no momento. Tente novamente em instantes.');
-    throw new Error(`Erro da API (${response.status})${detail ? ': ' + detail : ''}`);
+
+    if (response.status === 400) {
+      // Duas causas diferentes de 400 falam em workspace, e confundi-las foi o que fez
+      // este erro se repetir: quem bateu no limite de gasto lia "preencha o campo
+      // Workspace", preenchia, e continuava no mesmo lugar.
+      if (/spend limit|usage limit|limite de gasto|credit balance|billing/i.test(detail)) {
+        throw (montarErro('Limite de gasto atingido na organização ou no workspace. '
+          + 'Isto não se resolve na página: ajuste o limite em console.anthropic.com → '
+          + 'Settings → Limits (ou Workspaces → o workspace → Spend limits).',
+          detail, requestId));
+      }
+      if (/workspace/i.test(detail)) {
+        // Vale só para chave de vários workspaces: ela escolhe o workspace a cada
+        // requisição, pelo cabeçalho. Chave criada dentro de um workspace já vai
+        // sozinha, e para ela preencher o campo não muda nada.
+        pedirWorkspace();
+        throw (montarErro('A chave não resolveu sozinha em que workspace gastar. '
+          + 'Se ela for de vários workspaces, preencha o campo "Workspace" na barra do topo '
+          + '(console.anthropic.com → Settings → Workspaces, o id começa com wrkspc_) e '
+          + 'confirme que a sua conta tem acesso a esse workspace. Se não for, o campo não '
+          + 'resolve: crie uma chave dentro do workspace que vai pagar.', detail, requestId));
+      }
+      throw (montarErro('A API recusou a requisição.', detail, requestId));
+    }
+
+    if (response.status === 403) {
+      throw (montarErro('A chave não tem permissão para este recurso. Confira o '
+        + 'acesso da sua conta ao workspace em console.anthropic.com.', detail, requestId));
+    }
+    if (response.status === 429) {
+      throw (montarErro('Limite de requisições atingido. Aguarde um momento e '
+        + 'tente de novo.', detail, requestId));
+    }
+    if (response.status === 529) {
+      throw (montarErro('API sobrecarregada no momento. Tente de novo em instantes.',
+        detail, requestId));
+    }
+    throw (montarErro(`Erro da API (${response.status}).`, detail, requestId));
   }
 
+  anotar('');
   const data = await response.json();
   return data.content?.[0]?.text?.trim() ?? '';
 }

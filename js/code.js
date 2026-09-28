@@ -671,6 +671,8 @@ async function runProjectHumanize() {
         }
       } catch (err) {
         item.erro = err.name === 'AbortError' ? 'cancelado' : (err.message || String(err));
+        // agrupa pela causa, não pelo texto inteiro: o request-id muda a cada chamada
+        item.causa = err.causa || item.erro;
         if (err.name === 'AbortError') break;
       }
     }
@@ -729,15 +731,23 @@ function renderProjectHumanizeResult(reanalisado) {
   itens.forEach(i => {
     const msg = i.erro || i.aviso;
     if (!msg) return;
-    if (!falhas.has(msg)) falhas.set(msg, []);
-    falhas.get(msg).push(i.path);
+    const chave = i.causa || msg;
+    if (!falhas.has(chave)) falhas.set(chave, { msg, arquivos: [] });
+    falhas.get(chave).arquivos.push(i.path);
   });
-  const blocoFalhas = [...falhas].map(([msg, arquivos]) => `
+  const blocoFalhas = [...falhas.values()].map(({ msg, arquivos }) => `
     <div class="hz-erro">
       <div class="pz-falha-msg">${escHtml(msg)}</div>
       <div class="pz-falha-arqs">${arquivos.length} arquivo(s): ${
         arquivos.slice(0, 8).map(a => `<code>${escHtml(a)}</code>`).join(' ')}${
         arquivos.length > 8 ? ` <span class="muted">+${arquivos.length - 8}</span>` : ''}</div>
+      <details class="hz-list pz-diag">
+        <summary>Diagnóstico técnico — o que foi enviado e o que voltou</summary>
+        <div class="hz-actions">
+          <button class="btn btn-ghost btn-sm" data-diag-copy>📋 Copiar diagnóstico</button>
+        </div>
+        <pre class="hz-code">${escHtml(diagnosticoTexto())}</pre>
+      </details>
     </div>`).join('');
 
   const risco = itens.filter(i => i.risk === 'medio' || i.risk === 'alto');
@@ -772,6 +782,22 @@ function renderProjectHumanizeResult(reanalisado) {
       <div class="hz-warn">O .zip traz só os arquivos reescritos, com o caminho original. Nada
         foi gravado no seu projeto — a comparação e os testes são com você.</div>
     </div>`;
+
+  initDiagCopy(saida);
+}
+
+/** Liga o botão que copia o diagnóstico inteiro. */
+function initDiagCopy(raiz) {
+  raiz.querySelectorAll('[data-diag-copy]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const texto = btn.closest('.pz-diag').querySelector('.hz-code').textContent;
+      navigator.clipboard.writeText(texto).then(() => {
+        const antes = btn.textContent;
+        btn.textContent = '✅ Copiado';
+        setTimeout(() => { btn.textContent = antes; }, 1500);
+      });
+    });
+  });
 }
 
 function buildProjectReport(results) {

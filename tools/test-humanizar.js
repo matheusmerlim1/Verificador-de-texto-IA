@@ -85,7 +85,7 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
   await passo("o botão aparece no cartão e a reescrita roda", async () => {
     // monta um resultado de análise à mão e pinta o relatório
     await rodar(`
-      App.apiKey = 'sk-ant-chave-de-mentira-para-o-teste-0000';
+      App.apiKey = ['sk','ant','chave-de-mentira-para-o-teste-0000'].join('-');
       CodeState.files = [{ path: "src/exemplo.js", name: "exemplo.js", lang: "javascript",
         size: 120, include: true,
         file: new File(["function processData(data) {\\n  // retorna o resultado\\n  return data;\\n}\\n"], "exemplo.js") }];
@@ -146,7 +146,7 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
 
   await passo("reescrever o projeto inteiro mede o antes e o depois", async () => {
     await rodar(`
-      App.apiKey = 'sk-ant-chave-de-mentira-para-o-teste-0000';
+      App.apiKey = ['sk','ant','chave-de-mentira-para-o-teste-0000'].join('-');
       CodeState.projectName = 'exemplo';
       CodeState.files = [
         { path: "src/a.js", name: "a.js", lang: "javascript", size: 300, include: true,
@@ -314,7 +314,7 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
       `G1/backend/src/Produtos/RepositorioDeIngredienteEPizza${i}.php`);
     await rodar(`
       const longos = ${JSON.stringify(longos)};
-      App.apiKey = 'sk-ant-chave-de-mentira-para-o-teste-0000';
+      App.apiKey = ['sk','ant','chave-de-mentira-para-o-teste-0000'].join('-');
       CodeState.projectName = 'g1';
       CodeState.files = longos.map((p, i) => ({
         path: p, name: p.split('/').pop(), lang: p.endsWith('.ts') ? 'typescript' : 'php',

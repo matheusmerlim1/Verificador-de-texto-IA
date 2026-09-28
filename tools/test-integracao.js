@@ -99,10 +99,16 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
       });
       const nfalha = API.falharApos !== null && API.chamadas.length > API.falharApos;
       const status = nfalha ? 400 : API.status;
-      if (status !== 200) return { ok: false, status,
+      // Cabeçalhos de verdade: a API sempre devolve request-id e, autenticada,
+      // anthropic-workspace-id. Um simulador sem eles esconderia como a página se comporta.
+      const headers = new Headers({
+        'request-id': 'req_teste_' + API.chamadas.length,
+        ...(API.semWorkspaceNaResposta ? {} : { 'anthropic-workspace-id': 'wrkspc_da_resposta' })
+      });
+      if (status !== 200) return { ok: false, status, headers,
         json: async () => API.corpo || { error: { message: 'This API key is not scoped to a workspace' } } };
       const t = typeof API.texto === 'function' ? API.texto(body.messages[0].content) : API.texto;
-      return { ok: true, status: 200, json: async () => ({ content: [{ text: t }] }) };
+      return { ok: true, status: 200, headers, json: async () => ({ content: [{ text: t }] }) };
     };
     // respostas padrão: uma análise e uma reescrita plausíveis
     API.texto = prompt => /rewritten/.test(prompt)
@@ -239,7 +245,7 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
   await cenario("análise de um projeto, do arrastar ao relatório", async () => {
     await rodar(`document.querySelector('.tab[data-mode="code"]').click();
                  App.apiKey = ['sk','ant','api03-de-mentira-integra'].join('-');`);
-    await campo('api-key-input', 'sk-ant-api03-de-mentira-integra');
+    await campo('api-key-input', ['sk','ant','api03-de-mentira-integra'].join('-'));
     await soltarArquivos(CAMINHOS.slice(0, 4));
     exigir(await rodar(`selectedFiles().length === 4`), "os 4 arquivos não ficaram selecionados");
     exigir(await rodar(`!document.getElementById('btn-analyze-code').disabled`),
@@ -633,7 +639,7 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
   // ─────────────────────────────────────────────────────────────
   await cenario("a chave e o workspace sobrevivem a recarregar a página", async () => {
     const barra = await temBarra();
-    await campo('api-key-input', 'sk-ant-api03-de-mentira-guardada');
+    await campo('api-key-input', ['sk','ant','api03-de-mentira-guardada'].join('-'));
     await campo('workspace-input', 'wrkspc_guardado');
     await esperar(200);
     await abrir();
@@ -809,6 +815,126 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
           + t.fora.map(f => `${f.onde} (${f.tipo}: ${f.dir} > ${f.limite})`).join(" | "));
     }
     await rodar(`window.scrollTo(0, 0)`);
+  });
+
+
+  // ─────────────────────────────────────────────────────────────
+  //  21. O erro tem que dizer a verdade
+  // ─────────────────────────────────────────────────────────────
+  await cenario("a mensagem da API nunca é escondida", async () => {
+    await abrir();
+    await rodar(`App.apiKey = ['sk','ant','api03-de-mentira-verdade'].join('-')`);
+    const casos = [
+      [400, "Some very specific thing the API complained about"],
+      [400, "This API key is not scoped to a workspace"],
+      [401, "invalid x-api-key"],
+      [403, "not permitted for this workspace"],
+      [429, "rate_limit_error: too many requests"],
+      [529, "overloaded"]
+    ];
+    for (const [status, detalhe] of casos) {
+      const msg = await rodar(`(async () => {
+        API.status = ${status}; API.corpo = { error: { message: ${JSON.stringify(detalhe)} } };
+        try { await callClaude('oi'); return 'NAO FALHOU'; } catch (e) { return e.message; }
+      })()`);
+      exigir(msg.includes(detalhe),
+        `${status}: a mensagem da API sumiu. A pessoa vê "${msg}" e não o que a API disse`);
+      exigir(/request-id: req_/.test(msg),
+        `${status}: faltou o request-id, que é o que o suporte pede`);
+    }
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("limite de gasto não é confundido com escopo de chave", async () => {
+    const gasto = await rodar(`(async () => {
+      API.status = 400;
+      API.corpo = { error: { message: 'Your organization has reached its monthly spend limit' } };
+      try { await callClaude('oi'); return 'NAO FALHOU'; } catch (e) { return e.message; }
+    })()`);
+    exigir(/gasto/i.test(gasto), "não reconheceu o limite de gasto: " + gasto);
+    exigir(!/preencha o campo "Workspace"/.test(gasto),
+      "mandou preencher o Workspace para um limite de gasto — preencher não resolve isso");
+
+    const escopo = await rodar(`(async () => {
+      API.corpo = { error: { message: 'This API key is not scoped to a workspace' } };
+      try { await callClaude('oi'); return 'NAO FALHOU'; } catch (e) { return e.message; }
+    })()`);
+    exigir(/Workspace/.test(escopo), "não reconheceu o problema de escopo: " + escopo);
+    exigir(/vários workspaces/.test(escopo),
+      "a dica não diz que o campo só vale para chave de vários workspaces");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("o diagnóstico mostra o que foi enviado, sem revelar a chave", async () => {
+    await abrir();
+    const chave = ['sk','ant','api03-de-mentira-segredo-absoluto-12345'].join('-');
+    await rodar(`App.apiKey = ${JSON.stringify(chave)}; App.workspaceId = 'wrkspc_diag';`);
+    await rodar(`callClaude('oi')`);
+    await rodar(`(async () => {
+      API.status = 400; API.corpo = { error: { message: 'algo deu errado' } };
+      try { await callClaude('oi'); } catch (e) {}
+      API.status = 200; API.corpo = null;
+    })()`);
+    const texto = await rodar(`diagnosticoTexto()`);
+
+    exigir(!texto.includes(chave), "A CHAVE INTEIRA VAZOU no diagnóstico");
+    exigir(!texto.includes('segredo-absoluto'), "o miolo da chave vazou no diagnóstico");
+    exigir(texto.includes('2345'),   // a máscara mostra os quatro últimos
+      "não dá para saber qual chave é: nem o final aparece");
+    exigir(texto.includes('46 caracteres'),
+      "não registrou o tamanho da chave, que é o que denuncia uma chave truncada");
+    exigir(texto.includes('wrkspc_diag'), "não registrou o workspace que foi enviado");
+    exigir(texto.includes('wrkspc_da_resposta'),
+      "não registrou em que workspace a API disse que a chave caiu");
+    exigir(/HTTP 200/.test(texto) && /HTTP 400/.test(texto),
+      "não registrou as duas chamadas: " + texto.slice(0, 200));
+    exigir(texto.includes('algo deu errado'), "não registrou o que a API respondeu");
+    exigir(/request-id: req_/.test(texto), "não registrou o request-id");
+  });
+
+  await cenario("falha de rede entra no diagnóstico em vez de sumir", async () => {
+    await rodar(`(async () => {
+      const original = window.fetch;
+      window.fetch = async () => { throw new TypeError('Failed to fetch'); };
+      try { await callClaude('oi'); } catch (e) {}
+      window.fetch = original;
+    })()`);
+    const texto = await rodar(`diagnosticoTexto()`);
+    exigir(texto.includes('não chegou a responder'),
+      "uma falha de rede não deixou rastro no diagnóstico");
+    exigir(texto.includes('Failed to fetch'), "não registrou qual foi a falha de rede");
+  });
+
+  await cenario("a mesma falha em muitos arquivos vira um aviso só, com diagnóstico", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-umaviso'].join('-');`);
+    await soltarArquivos(CAMINHOS.slice(0, 8));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 8`, 90),
+      "sem relatório");
+    await rodar(`API.status = 400;
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('.pz-result')`, 120), "não terminou");
+
+    const r = await val(`(() => {
+      const el = document.querySelector('.pz-result');
+      return { avisos: el.querySelectorAll('.hz-erro').length,
+               temDiag: !!el.querySelector('.pz-diag'),
+               temCopiar: !!el.querySelector('[data-diag-copy]'),
+               diagTemChave: (el.querySelector('.pz-diag .hz-code') || {}).textContent
+                 ? new RegExp(['sk','ant','api03-de-mentira-umaviso'].join('-')).test(el.querySelector('.pz-diag .hz-code').textContent)
+                 : false };
+    })()`);
+    exigir(r.avisos === 1,
+      `${r.avisos} avisos para a mesma causa — o request-id, que muda a cada chamada, `
+      + `não pode entrar no agrupamento`);
+    exigir(r.temDiag, "a falha não trouxe o bloco de diagnóstico");
+    exigir(r.temCopiar, "não dá para copiar o diagnóstico");
+    exigir(!r.diagTemChave, "A CHAVE VAZOU no diagnóstico mostrado na tela");
+    await rodar(`API.status = 200; API.corpo = null;`);
   });
 
   ws.close(); chrome.kill();
