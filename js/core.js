@@ -112,8 +112,26 @@ function pedirWorkspace() {
   const bar = ws.closest('.apikey-bar');
   if (bar) bar.classList.add('precisa-workspace');
   ws.classList.add('pedindo');
-  ws.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  if (!ws.value) ws.focus();
+  // Marcar o campo é tudo o que se faz aqui. A versão anterior também rolava a página até
+  // ele e tomava o foco — a cada chamada que falhava. Com 75 arquivos falhando pela mesma
+  // causa, eram 75 saltos: a pessoa tentava ler o relatório e a página puxava de volta
+  // para o topo. Quem está lendo manda na rolagem, não o erro.
+}
+
+/**
+ * Grava o workspace vindo de qualquer lugar da tela e mantém os campos em sincronia.
+ * Existe porque agora há dois lugares para preencher: a barra do topo e o formulário que
+ * aparece junto do próprio erro.
+ */
+function definirWorkspace(valor) {
+  App.workspaceId = String(valor || '').trim();
+  try { localStorage.setItem(LS_WS, App.workspaceId); } catch (_) { /* modo privado */ }
+  const ws = document.getElementById('workspace-input');
+  if (ws) {
+    ws.value = App.workspaceId;
+    if (App.workspaceId) ws.classList.remove('pedindo');
+  }
+  return App.workspaceId;
 }
 
 function initApiKey() {
@@ -376,11 +394,12 @@ async function callClaude(prompt, opts = {}) {
         // requisição, pelo cabeçalho. Chave criada dentro de um workspace já vai
         // sozinha, e para ela preencher o campo não muda nada.
         pedirWorkspace();
-        throw (montarErro('A chave não resolveu sozinha em que workspace gastar. '
-          + 'Se ela for de vários workspaces, preencha o campo "Workspace" na barra do topo '
-          + '(console.anthropic.com → Settings → Workspaces, o id começa com wrkspc_) e '
-          + 'confirme que a sua conta tem acesso a esse workspace. Se não for, o campo não '
-          + 'resolve: crie uma chave dentro do workspace que vai pagar.', detail, requestId));
+        const errWs = montarErro('Esta chave atende a mais de um workspace, então cada '
+          + 'requisição precisa dizer em qual deles gastar. Informe o ID abaixo '
+          + '(console.anthropic.com → Settings → Workspaces, começa com wrkspc_) e confirme '
+          + 'que a sua conta tem acesso a ele.', detail, requestId);
+        errWs.precisaWorkspace = true;
+        throw errWs;
       }
       throw (montarErro('A API recusou a requisição.', detail, requestId));
     }

@@ -673,6 +673,7 @@ async function runProjectHumanize() {
         item.erro = err.name === 'AbortError' ? 'cancelado' : (err.message || String(err));
         // agrupa pela causa, não pelo texto inteiro: o request-id muda a cada chamada
         item.causa = err.causa || item.erro;
+        item.precisaWorkspace = !!err.precisaWorkspace;
         if (err.name === 'AbortError') break;
       }
     }
@@ -690,6 +691,11 @@ function renderProjectHumanizeResult(reanalisado) {
   const itens = PZ.itens;
   const saida = $('pz-out');
   if (!itens.length) { saida.innerHTML = ''; return; }
+
+  // Onde este bloco está na tela, antes de trocar o conteúdo. Redesenhar muda a altura do
+  // que vem acima, e a página desliza sob quem está lendo. Guardando a posição aqui e
+  // recompondo no fim, o bloco fica parado onde estava.
+  const ancoraAntes = saida.getBoundingClientRect().top;
 
   const feitos = itens.filter(i => i.codigo && i.depois !== null);
   // Mesma ponderação do relatório: arquivo grande pesa mais que arquivo de 10 linhas.
@@ -732,12 +738,22 @@ function renderProjectHumanizeResult(reanalisado) {
     const msg = i.erro || i.aviso;
     if (!msg) return;
     const chave = i.causa || msg;
-    if (!falhas.has(chave)) falhas.set(chave, { msg, arquivos: [] });
-    falhas.get(chave).arquivos.push(i.path);
+    if (!falhas.has(chave)) falhas.set(chave, { msg, arquivos: [], precisaWorkspace: false });
+    const grupo = falhas.get(chave);
+    grupo.arquivos.push(i.path);
+    if (i.precisaWorkspace) grupo.precisaWorkspace = true;
   });
-  const blocoFalhas = [...falhas.values()].map(({ msg, arquivos }) => `
+  const blocoFalhas = [...falhas.values()].map(({ msg, arquivos, precisaWorkspace }) => `
     <div class="hz-erro">
       <div class="pz-falha-msg">${escHtml(msg)}</div>
+      ${precisaWorkspace ? `
+      <form class="pz-ws-form" data-ws-form>
+        <label for="pz-ws-input">ID do workspace</label>
+        <input type="text" id="pz-ws-input" class="apikey-input" placeholder="wrkspc_..."
+               value="${escHtml(App.workspaceId || '')}" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="btn btn-primary btn-sm">Salvar e tentar de novo</button>
+        <span class="pz-ws-aviso" data-ws-aviso></span>
+      </form>` : ''}
       <div class="pz-falha-arqs">${arquivos.length} arquivo(s): ${
         arquivos.slice(0, 8).map(a => `<code>${escHtml(a)}</code>`).join(' ')}${
         arquivos.length > 8 ? ` <span class="muted">+${arquivos.length - 8}</span>` : ''}</div>
@@ -784,9 +800,41 @@ function renderProjectHumanizeResult(reanalisado) {
     </div>`;
 
   initDiagCopy(saida);
+  initWorkspaceForm(saida);
+
+  // devolve o bloco para onde ele estava, para a leitura não escorregar
+  const ancoraDepois = saida.getBoundingClientRect().top;
+  if (Math.abs(ancoraDepois - ancoraAntes) > 1) window.scrollBy(0, ancoraDepois - ancoraAntes);
 }
 
 /** Liga o botão que copia o diagnóstico inteiro. */
+/**
+ * Liga o formulário do workspace que aparece junto do erro.
+ *
+ * O erro dizia para ir preencher um campo em outro canto da tela. Resolver o problema onde
+ * ele aparece poupa a caçada — e, com a rolagem devolvida a quem lê, era o que faltava.
+ */
+function initWorkspaceForm(raiz) {
+  raiz.querySelectorAll('[data-ws-form]').forEach(form => {
+    const campo = form.querySelector('input');
+    const aviso = form.querySelector('[data-ws-aviso]');
+    form.addEventListener('submit', ev => {
+      ev.preventDefault();
+      const valor = campo.value.trim();
+      if (!/^wrkspc_/.test(valor)) {
+        aviso.textContent = 'O ID começa com wrkspc_';
+        aviso.className = 'pz-ws-aviso erro';
+        campo.focus();
+        return;
+      }
+      definirWorkspace(valor);
+      aviso.textContent = 'Salvo. Recomeçando…';
+      aviso.className = 'pz-ws-aviso ok';
+      runProjectHumanize();
+    });
+  });
+}
+
 function initDiagCopy(raiz) {
   raiz.querySelectorAll('[data-diag-copy]').forEach(btn => {
     btn.addEventListener('click', () => {

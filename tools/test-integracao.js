@@ -860,8 +860,8 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
       try { await callClaude('oi'); return 'NAO FALHOU'; } catch (e) { return e.message; }
     })()`);
     exigir(/Workspace/.test(escopo), "não reconheceu o problema de escopo: " + escopo);
-    exigir(/vários workspaces/.test(escopo),
-      "a dica não diz que o campo só vale para chave de vários workspaces");
+    exigir(/mais de um workspace/.test(escopo),
+      "a dica não diz que isso só acontece com chave de mais de um workspace");
     await rodar(`API.status = 200; API.corpo = null;`);
   });
 
@@ -935,6 +935,109 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     exigir(r.temCopiar, "não dá para copiar o diagnóstico");
     exigir(!r.diagTemChave, "A CHAVE VAZOU no diagnóstico mostrado na tela");
     await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+
+  // ─────────────────────────────────────────────────────────────
+  //  22. A rolagem é de quem está lendo
+  // ─────────────────────────────────────────────────────────────
+  await cenario("erro repetido não rouba a rolagem da página", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-rolagem'].join('-');`);
+    await soltarArquivos(CAMINHOS.slice(0, 8));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 8`, 90),
+      "sem relatório");
+
+    // a pessoa desce para ler o relatório
+    await rodar(`document.querySelectorAll('details').forEach(d => { d.open = true; });
+                 window.scrollTo(0, Math.floor(document.documentElement.scrollHeight / 2))`);
+    await esperar(300);
+    const antes = await rodar(`Math.round(window.scrollY)`);
+    exigir(antes > 50, "a página nem rolou, o teste não vale: " + antes);
+
+    // e agora tudo falha pela causa que manda preencher o workspace
+    await rodar(`App.workspaceId = '';
+                 API.status = 400;
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace, '
+                   + 'so this request must include the anthropic-workspace-id header.' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('.pz-result')`, 120), "não terminou");
+    await esperar(600);   // tempo de sobra para qualquer scroll suave se manifestar
+
+    const depois = await rodar(`Math.round(window.scrollY)`);
+    exigir(Math.abs(depois - antes) < 120,
+      `a página pulou de ${antes} para ${depois} — o erro tomou a rolagem de quem estava lendo`);
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("erro repetido não rouba o foco", async () => {
+    const foco = await rodar(`(document.activeElement || {}).id || '(nenhum)'`);
+    exigir(foco !== 'workspace-input',
+      "o campo do workspace tomou o foco sozinho — digitar em qualquer outro lugar vira loteria");
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  //  23. Resolver onde o problema aparece
+  // ─────────────────────────────────────────────────────────────
+  await cenario("o campo do workspace aparece junto do erro", async () => {
+    const r = await val(`(() => {
+      const form = document.querySelector('[data-ws-form]');
+      if (!form) return { existe: false };
+      return { existe: true,
+               dentroDoErro: !!form.closest('.hz-erro'),
+               temCampo: !!form.querySelector('input'),
+               temBotao: !!form.querySelector('button[type=submit]') };
+    })()`);
+    exigir(r.existe, "a falha de workspace não trouxe o campo para preencher ali mesmo");
+    exigir(r.dentroDoErro, "o campo ficou fora do bloco do erro");
+    exigir(r.temCampo && r.temBotao, "faltou o campo ou o botão");
+  });
+
+  await cenario("um ID malformado é recusado antes de gastar chamada", async () => {
+    await rodar(`(() => {
+      API.chamadas = [];
+      const f = document.querySelector('[data-ws-form]');
+      f.querySelector('input').value = 'qualquer-coisa';
+      f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    })()`);
+    await esperar(300);
+    const r = await val(`({
+      chamadas: API.chamadas.length,
+      aviso: document.querySelector('[data-ws-aviso]').textContent,
+      ws: App.workspaceId
+    })`);
+    exigir(r.chamadas === 0, "gastou " + r.chamadas + " chamada(s) com um ID que nem tem o prefixo");
+    exigir(/wrkspc_/.test(r.aviso), "não explicou o formato esperado: " + r.aviso);
+    exigir(!r.ws, "guardou um ID malformado: " + r.ws);
+  });
+
+  await cenario("salvar o workspace ali refaz o trabalho, agora com o cabeçalho", async () => {
+    await rodar(`(() => {
+      API.status = 200; API.corpo = null; API.chamadas = [];
+      const f = document.querySelector('[data-ws-form]');
+      f.querySelector('input').value = 'wrkspc_preenchido_no_erro';
+      f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    })()`);
+    exigir(await esperarPor(`API.chamadas.length > 0`, 60), "não tentou de novo depois de salvar");
+    await esperarPor(`document.querySelector('.pz-result')`, 120);
+
+    const r = await val(`({
+      cabecalho: API.chamadas[0].headers['anthropic-workspace-id'],
+      guardado: localStorage.getItem('dlm_workspace_id'),
+      campoDoTopo: (document.getElementById('workspace-input') || {}).value,
+      aindaPedindo: (document.getElementById('workspace-input') || {}).classList
+        ? document.getElementById('workspace-input').classList.contains('pedindo') : false
+    })`);
+    exigir(r.cabecalho === 'wrkspc_preenchido_no_erro',
+      "o workspace salvo no erro não foi no cabeçalho: " + r.cabecalho);
+    exigir(r.guardado === 'wrkspc_preenchido_no_erro',
+      "não ficou guardado para a próxima vez: " + r.guardado);
+    exigir(r.campoDoTopo === 'wrkspc_preenchido_no_erro',
+      "o campo da barra do topo ficou fora de sincronia: " + r.campoDoTopo);
+    exigir(!r.aindaPedindo, "o campo continuou marcado como pendente depois de preenchido");
   });
 
   ws.close(); chrome.kill();

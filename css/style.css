@@ -1302,3 +1302,15 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 .pz-diag .hz-code { max-height: 300px; font-size: 11.5px; white-space: pre-wrap;
   overflow-wrap: anywhere; }
 .pz-diag summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+
+/* Formulário do workspace dentro do próprio erro: resolver onde o problema aparece,
+   em vez de mandar procurar um campo em outro canto da tela. */
+.pz-ws-form {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.pz-ws-form label { font-size: 12px; color: var(--muted); }
+.pz-ws-form input { flex: 1 1 220px; min-width: 0; max-width: 320px; font-size: 12.5px; }
+.pz-ws-aviso { font-size: 12px; flex-basis: 100%; }
+.pz-ws-aviso.erro { color: var(--accent); }
+.pz-ws-aviso.ok { color: var(--green); }
