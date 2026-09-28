@@ -152,43 +152,73 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
    * dentro dela, que a rolagem do pai escondia do total.
    */
   const transbordo = async () => val(`(() => {
-    const fora = [];
+    // Tudo que começa fechado é aberto antes de medir. Era esse o furo: <details> fechado
+    // não tem caixa, então o que estourava dentro dele — e só aparecia ao rolar e abrir —
+    // passava batido por uma varredura que só olhava o que já estava na tela.
+    document.querySelectorAll('details').forEach(d => { d.open = true; });
+
+    const caminho = el => {
+      const partes = [];
+      for (let e = el; e && e !== document.body && partes.length < 4; e = e.parentElement)
+        partes.unshift(e.tagName.toLowerCase() +
+          (e.id ? '#' + e.id : (e.className && typeof e.className === 'string'
+            ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : '')));
+      return partes.join(' > ');
+    };
+    const clipa = est => est.overflowX !== 'visible' || est.textOverflow === 'ellipsis';
+
     const doc = document.documentElement;
-    document.querySelectorAll('.report, .report *').forEach(el => {
+    const fora = [];
+    document.querySelectorAll('body *').forEach(el => {
       const r = el.getBoundingClientRect();
-      if (!r.width) return;
-      // Passa da janela — mas só conta se ninguém acima estiver segurando. Um quadro
-      // com overflow-x: auto contém o que tem dentro: a tabela larga continua com a
-      // largura dela na conta do layout, e quem rola é o quadro, não a página.
-      const contido = (() => {
-        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement)
-          if (getComputedStyle(p).overflowX !== 'visible') return true;
-        return false;
-      })();
-      if (!contido && r.right > doc.clientWidth + 2)
-        fora.push({ onde: (el.className || el.tagName) + '', tipo: 'passa da janela',
-                    dir: Math.round(r.right), limite: doc.clientWidth });
-      // ou o conteúdo é mais largo que a própria caixa, sem rolagem nem corte previsto
+      if (!r.width || !r.height) return;
       const est = getComputedStyle(el);
-      const corta = est.overflowX !== 'visible' || est.textOverflow === 'ellipsis';
-      if (!corta && el.scrollWidth > el.clientWidth + 2)
-        fora.push({ onde: (el.className || el.tagName) + '', tipo: 'conteúdo maior que a caixa',
+      if (est.position === 'fixed' || est.display === 'none') return;
+
+      // Passa da janela — mas só conta se ninguém acima estiver segurando. Um quadro com
+      // overflow-x: auto contém o que tem dentro: a tabela larga continua com a largura
+      // dela na conta do layout, e quem rola é o quadro, não a página.
+      let contido = false;
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement)
+        if (clipa(getComputedStyle(p))) { contido = true; break; }
+      if (!contido && r.right > doc.clientWidth + 2)
+        fora.push({ onde: caminho(el), tipo: 'passa da janela',
+                    dir: Math.round(r.right), limite: doc.clientWidth });
+
+      // Ou o conteúdo é mais largo que a própria caixa, sem rolagem nem corte previsto.
+      if (!clipa(est) && el.scrollWidth > el.clientWidth + 2)
+        fora.push({ onde: caminho(el), tipo: 'conteúdo maior que a caixa',
                     dir: el.scrollWidth, limite: el.clientWidth });
+
+      // Ou o texto continua para fora da caixa que o contém, que é o que se vê na tela:
+      // a palavra segue além da borda do pai em vez de quebrar.
+      const pai = el.parentElement;
+      if (pai && !clipa(getComputedStyle(pai))) {
+        const rp = pai.getBoundingClientRect();
+        if (rp.width && r.right > rp.right + 2)
+          fora.push({ onde: caminho(el), tipo: 'sai da caixa do pai',
+                      dir: Math.round(r.right), limite: Math.round(rp.right) });
+      }
     });
-    return { fora: fora.slice(0, 6), total: fora.length,
+
+    // Um mesmo estouro aparece no filho e em cada ancestral; o primeiro já diz onde é.
+    const vistos = new Set();
+    const unicos = fora.filter(f => {
+      const k = f.onde + f.tipo;
+      if (vistos.has(k)) return false;
+      vistos.add(k); return true;
+    });
+    return { fora: unicos.slice(0, 8), total: unicos.length,
              rolagem: doc.scrollWidth - doc.clientWidth, janela: doc.clientWidth };
   })()`);
 
-  // A chave é de mentira e vem em pedaços de propósito: o hook do repositório barra
-  // qualquer 'sk-' + 'ant-' literal, e ele está certo em barrar. Precisa passar de 20
-  // caracteres, senão App.keyOk é falso e a página nem tenta chamar a API.
   /** A cópia privada traz a chave no config.js e tira a barra da tela, para não
       mostrar a chave a quem estiver olhando. Os cenários abaixo valem nas duas, então
       só mexem no campo quando ele existe. */
   const campo = async (idCampo, valor) => rodar(`(() => {
-    const el = document.getElementById(${JSON.stringify("")} + "${idCampo}");
+    const el = document.getElementById("${idCampo}");
     if (!el) return 'sem campo';
-    el.value = ${JSON.stringify("")} + ${JSON.stringify(valor)};
+    el.value = ${JSON.stringify(valor)};
     el.dispatchEvent(new Event('input'));
     return 'ok';
   })()`);
@@ -636,6 +666,149 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
                             rastros: (CodeState.results[0].forensics || {}).traces || [] })`);
     exigir(r.rastros.length >= 1, "não achou a assinatura");
     exigir(r.score >= 95, "a assinatura não levou o percentual para o topo: " + r.score);
+  });
+
+
+  // ─────────────────────────────────────────────────────────────
+  //  18. O campo que a mensagem de erro manda preencher
+  // ─────────────────────────────────────────────────────────────
+  // Vale nas duas cópias, sem exceção. A cópia privada reconstrói a barra do topo
+  // para não mostrar a chave na tela, e nessa reconstrução o campo do workspace ia
+  // junto: o erro mandava preencher um campo que não existia mais. Quem tem chave de
+  // organização ficava num beco — nenhuma chamada funcionava, e não havia o que fazer.
+  await cenario("o campo Workspace existe, com chave digitada ou vinda do config.js", async () => {
+    await abrir();
+    const r = await val(`(() => {
+      const ws = document.getElementById('workspace-input');
+      if (!ws) return { existe: false };
+      const est = getComputedStyle(ws);
+      return { existe: true, visivel: est.display !== 'none' && est.visibility !== 'hidden',
+               naBarra: !!ws.closest('.apikey-bar') };
+    })()`);
+    exigir(r.existe, "o campo Workspace não está na tela — a mensagem de erro manda preencher "
+      + "um campo que não existe");
+    exigir(r.visivel, "o campo Workspace existe mas está escondido");
+    exigir(r.naBarra, "o campo Workspace saiu da barra do topo, onde a mensagem diz que ele está");
+  });
+
+  await cenario("digitar o workspace chega ao cabeçalho da requisição", async () => {
+    await rodar(`App.apiKey = ['sk','ant','api03-de-mentira-wsfield'].join('-'); API.chamadas = [];`);
+    await campo('workspace-input', 'wrkspc_digitado');
+    const ligou = await rodar(`App.workspaceId`);
+    exigir(ligou === 'wrkspc_digitado',
+      "digitar no campo não mexeu em App.workspaceId: " + JSON.stringify(ligou)
+      + " — o campo está na tela mas não está ligado a nada");
+    await rodar(`callClaude('oi')`);
+    const h = await val(`API.chamadas[0].headers`);
+    exigir(h['anthropic-workspace-id'] === 'wrkspc_digitado',
+      "o workspace digitado não foi no cabeçalho: " + h['anthropic-workspace-id']);
+  });
+
+  await cenario("o erro de escopo acende o campo em vez de só falar dele", async () => {
+    await abrir();
+    await rodar(`App.apiKey = ['sk','ant','api03-de-mentira-acende'].join('-');
+                 App.workspaceId = '';
+                 API.status = 400;
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace' } };`);
+    const msg = await rodar(`(async () => { try { await callClaude('oi'); return 'NAO FALHOU'; }
+                              catch (e) { return e.message; } })()`);
+    exigir(msg.includes('Workspace'), "a mensagem mudou: " + msg);
+    const marcado = await rodar(`(() => {
+      const ws = document.getElementById('workspace-input');
+      return ws ? ws.classList.contains('pedindo') : false;
+    })()`);
+    exigir(marcado,
+      "o campo não foi destacado — a pessoa lê que é para preencher e não acha o campo");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("workspace vindo do config.js vale sem ninguém digitar", async () => {
+    const r = await rodar(`(async () => {
+      const antes = App.workspaceId;
+      App.workspaceId = 'wrkspc_do_config';   // é o que CFG.workspaceId faz no carregamento
+      API.chamadas = [];
+      App.apiKey = ['sk','ant','api03-de-mentira-cfgws'].join('-');
+      await callClaude('oi');
+      const h = API.chamadas[0].headers;
+      App.workspaceId = antes;
+      return h['anthropic-workspace-id'] || 'SEM CABEÇALHO';
+    })()`);
+    exigir(r === 'wrkspc_do_config', "o workspace do config.js não foi no cabeçalho: " + r);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  //  19. O relatório com tudo aberto, que é como fica ao rolar
+  // ─────────────────────────────────────────────────────────────
+  // O detector abre todo <details> antes de medir, mas os blocos de reescrita por
+  // arquivo só existem depois de clicar. É o estado que a pessoa vê ao rolar para
+  // baixo e abrir um arquivo — e era o único que nenhum cenário montava.
+  await cenario("detalhe de arquivo aberto, com reescrita e com erro dentro", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-detalhe'].join('-');`);
+    await soltarArquivos(CAMINHOS.slice(0, 6));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-details .det').length >= 6`), "sem relatório");
+
+    // uma reescrita que dá certo, com linha longa de verdade
+    await rodar(`
+      API.texto = prompt => /rewritten/.test(prompt)
+        ? JSON.stringify({ rewritten:
+            "export const repositorioDePedidosComFiltroDeStatusEOrdenacaoPorDataDeCriacao = "
+            + "(conexao, filtros) => conexao.query('SELECT * FROM pedidos WHERE status = ? "
+            + "ORDER BY criado_em DESC', [filtros.status]);",
+            changes: [{ what: "nome longo demais para caber numa linha da caixa",
+                        why: "o nome antigo não dizia o que a função faz, e este aqui serve para "
+                             + "ver até onde a caixa aguenta sem deixar o texto escapar",
+                        where: "linha 1" }],
+            kept: ["a assinatura exportada, porque outro módulo depende dela pelo nome"],
+            risk: "nenhum", note: "Nada além de nomes mudou." })
+        : JSON.stringify({ score: 30, confidence: "alta", verdict: "v", signals: [],
+                           hotspots: [], suggestions: [], summary: "s" });
+      document.querySelectorAll('#rep-details .det').forEach(d => { d.open = true; });
+      document.querySelectorAll('[data-hz-run]')[0].click();`);
+    exigir(await esperarPor(`document.querySelector('.hz-result')`), "a reescrita não apareceu");
+
+    // e uma que falha, dentro do detalhe
+    await rodar(`API.status = 400;
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace' } };
+                 document.querySelectorAll('[data-hz-run]')[1].click()`);
+    exigir(await esperarPor(`document.querySelectorAll('.hz-erro').length`), "o erro não apareceu no detalhe");
+    await rodar(`API.status = 200; API.corpo = null;`);
+
+    for (const largura of [1440, 1100, 900, 760, 390]) {
+      await send("Emulation.setDeviceMetricsOverride",
+        { width: largura, height: 900, deviceScaleFactor: 1, mobile: largura < 800 });
+      await esperar(400);
+      const t = await transbordo();
+      await send("Emulation.clearDeviceMetricsOverride");
+      await esperar(120);
+      if (t.total || t.rolagem > 2)
+        throw new Error(`a ${largura}px: ${t.total} bloco(s) fora, ${t.rolagem}px de rolagem — `
+          + t.fora.map(f => `${f.onde} (${f.tipo}: ${f.dir} > ${f.limite})`).join(" | "));
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  //  20. Rolar até o fim não revela nada fora da caixa
+  // ─────────────────────────────────────────────────────────────
+  await cenario("rolar o relatório inteiro não revela nada fora da caixa", async () => {
+    const alturas = await val(`(() => {
+      document.querySelectorAll('details').forEach(d => { d.open = true; });
+      return { total: document.documentElement.scrollHeight,
+               janela: document.documentElement.clientHeight };
+    })()`);
+    const passos = Math.max(1, Math.ceil(alturas.total / alturas.janela));
+    for (let i = 0; i <= passos; i++) {
+      await rodar(`window.scrollTo(0, ${i} * document.documentElement.clientHeight)`);
+      await esperar(120);
+      const t = await transbordo();
+      if (t.total || t.rolagem > 2)
+        throw new Error(`rolando (${i}/${passos}): ${t.total} bloco(s) fora, `
+          + `${t.rolagem}px de rolagem lateral — `
+          + t.fora.map(f => `${f.onde} (${f.tipo}: ${f.dir} > ${f.limite})`).join(" | "));
+    }
+    await rodar(`window.scrollTo(0, 0)`);
   });
 
   ws.close(); chrome.kill();

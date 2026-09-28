@@ -101,6 +101,21 @@ function getVerdict(score) {
 // ════════════════════════════════════════════════
 //  BARRA DE API KEY (compartilhada pelos dois modos)
 // ════════════════════════════════════════════════
+/**
+ * Traz o campo do workspace para a frente quando a API reclama de escopo. A mensagem de
+ * erro manda preencher um campo; esta função garante que o campo esteja visível, em foco
+ * e marcado, em vez de deixar a pessoa procurando.
+ */
+function pedirWorkspace() {
+  const ws = document.getElementById('workspace-input');
+  if (!ws) return;
+  const bar = ws.closest('.apikey-bar');
+  if (bar) bar.classList.add('precisa-workspace');
+  ws.classList.add('pedindo');
+  ws.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (!ws.value) ws.focus();
+}
+
 function initApiKey() {
   const input = $('api-key-input');
   const badge = $('api-key-badge');
@@ -128,15 +143,21 @@ function initApiKey() {
       // Build com chave, mas o dono quer poder trocá-la na tela.
       input.value = App.apiKey;
       setKeyStatus();
+      ligarWorkspace();
       return;
     }
 
     bar.classList.add('embedded');
+    // O campo do workspace tem que sobreviver à troca do innerHTML. Chave de
+    // organização só funciona com ele preenchido, e a mensagem de erro da API manda
+    // preencher justamente este campo: apagá-lo aqui deixava a pessoa num beco —
+    // o erro pedia um campo que não existia mais na tela.
+    const ws = $('workspace-input');
     if (EMBEDDED_KEY) {
       bar.innerHTML =
         `<span class="apikey-label">🔑 ${escHtml(CFG.ownerLabel || 'Chave cadastrada')}</span>` +
         `<span class="apikey-badge ok">✅ Pronto para analisar</span>` +
-        `<span class="apikey-hint">Nada a preencher. O consumo é faturado na conta do responsável por esta cópia.</span>`;
+        `<span class="apikey-hint">O consumo é faturado na conta do responsável por esta cópia.</span>`;
     } else {
       // Build privado sem chave: falta um passo de instalação, não é erro do usuário.
       bar.classList.add('unconfigured');
@@ -145,8 +166,10 @@ function initApiKey() {
         `<span class="apikey-badge err">⚠️ Falta preencher config.js</span>` +
         `<span class="apikey-hint">Abra <code>config.js</code>, cole a chave em <code>apiKey</code> e recarregue a página (Ctrl+F5).</span>`;
     }
-    // Recria o seletor de modelo, removido junto com o innerHTML.
+    // Recria o seletor de modelo e o campo do workspace, tirados junto com o innerHTML.
     bar.appendChild(sel);
+    if (ws) bar.appendChild(ws);
+    ligarWorkspace();
     return;
   }
 
@@ -162,9 +185,17 @@ function initApiKey() {
     document.dispatchEvent(new CustomEvent('apikeychange'));
   });
 
-  // Workspace: só faz falta com chave de organização, então fica discreto e opcional.
-  const ws = document.getElementById('workspace-input');
-  if (ws) {
+  ligarWorkspace();
+
+  /**
+   * Workspace: só faz falta com chave de organização, então fica discreto e opcional.
+   * Roda em todo caminho — com chave digitada ou vinda do config.js. Sem isso, uma
+   * chave de organização não tem como ser escopada e toda chamada volta 400.
+   */
+  function ligarWorkspace() {
+    const ws = $('workspace-input');
+    if (!ws || ws.dataset.ligado) return;
+    ws.dataset.ligado = '1';
     ws.value = App.workspaceId;
     ws.addEventListener('input', () => {
       App.workspaceId = ws.value.trim();
@@ -226,6 +257,8 @@ async function callClaude(prompt, opts = {}) {
     if (response.status === 401) throw new Error('Chave de API inválida ou sem permissão. Verifique em console.anthropic.com.');
     // A mensagem da API é em inglês e não diz onde resolver. Esta diz.
     if (response.status === 400 && /workspace/i.test(detail)) {
+      // Mandar preencher um campo sem mostrar onde ele está não ajuda ninguém.
+      pedirWorkspace();
       throw new Error('Esta chave é da organização e não de um workspace: preencha o campo '
         + '"Workspace" na barra do topo com o ID do workspace (console.anthropic.com → '
         + 'Settings → Workspaces, o id começa com wrkspc_). Ou use uma chave criada dentro '

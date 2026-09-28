@@ -1278,3 +1278,21 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
   /* com menos espaço, o caminho do arquivo cede primeiro — ele é o que dá para cortar */
   .td-path { max-width: 220px; }
 }
+
+/* Campo do workspace em evidência: a API recusou por falta de escopo e a mensagem
+   manda preencher justamente ele. Sem o realce, a pessoa lê "preencha o campo" e
+   não acha o campo. */
+.apikey-input--ws.pedindo {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(192, 57, 43, .18);
+  opacity: 1;
+  animation: ws-chama 1.2s ease-in-out 2;
+}
+@keyframes ws-chama {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(192, 57, 43, .18); }
+  50%      { box-shadow: 0 0 0 6px rgba(192, 57, 43, .30); }
+}
+.apikey-bar.embedded .apikey-input--ws { display: inline-block; }
+@media (prefers-reduced-motion: reduce) {
+  .apikey-input--ws.pedindo { animation: none; }
+}
