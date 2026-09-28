@@ -828,7 +828,11 @@ function buildProjectReport(results) {
 function normalizeSuggestion(action) {
   return String(action || '')
     .toLowerCase()
-    .replace(/[^a-zà-ú\s]/g, '')
+    // sem o acento: "genéricos" e "genericos" são a mesma sugestão e têm que cair
+    // no mesmo grupo, senão a mesma recomendação aparece duas vezes no relatório
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z\s]/g, '')
     .split(/\s+/)
     .filter(w => w.length > 4)
     .slice(0, 5)
