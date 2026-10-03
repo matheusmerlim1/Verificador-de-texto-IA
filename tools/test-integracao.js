@@ -1379,6 +1379,36 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     exigir(!r.avisoParada, "disse que parou, mas foi até o fim");
   });
 
+
+  await cenario("a análise também para de chamar a API depois da recusa", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-analise'].join('-');
+                 App.workspaceId = '';
+                 API.status = 400; API.chamadas = [];
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace, '
+                   + 'so this request must include the anthropic-workspace-id header.' } };`);
+    await soltarArquivos(MUITOS.slice(0, 20));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 20`, 120),
+      "o relatório não saiu");
+
+    const r = await val(`({
+      chamadas: API.chamadas.length,
+      linhas: document.querySelectorAll('#rep-table tbody tr').length,
+      resultados: CodeState.results.length,
+      comScore: CodeState.results.filter(x => typeof x.score === 'number').length
+    })`);
+    // uma recusa por concorrência é aceitável; dezenas não
+    exigir(r.chamadas <= 6,
+      `gastou ${r.chamadas} chamadas para 20 arquivos depois de a conta já ter recusado`);
+    exigir(r.linhas === 20, `a tabela perdeu arquivos: ${r.linhas} de 20`);
+    exigir(r.comScore === 20,
+      "a análise deixou de pontuar arquivos — a heurística local é offline e deveria valer "
+      + "para todos mesmo sem a IA");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
   ws.close(); chrome.kill();
   console.log(`cenários: ${ok.length} passaram, ${falhas.length} falharam`);
   ok.forEach(x => console.log("  ✓", x));

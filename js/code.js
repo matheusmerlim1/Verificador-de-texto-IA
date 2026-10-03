@@ -290,6 +290,7 @@ async function runCodeAnalysis() {
   if (!files.length || CodeState.running) return;
 
   CodeState.running = true;
+  CodeState.configRecusada = null;
   CodeState.abort   = new AbortController();
   updateCodeButton();
 
@@ -320,7 +321,10 @@ async function runCodeAnalysis() {
       const f = runForensics(content, { mode: 'code', lang: file.lang });
 
       let ai = null;
-      if (useAI) {
+      // Depois que a conta recusou uma vez, recusa todas: segue só com a heurística local,
+      // que é offline e gratuita, em vez de gastar uma chamada por arquivo para receber a
+      // mesma resposta. A análise continua saindo, só que sem a parte da IA.
+      if (useAI && !CodeState.configRecusada) {
         try {
           ai = await callClaudeJSON(buildCodePrompt(file, content, h, f), {
             maxTokens: 2000,
@@ -329,8 +333,11 @@ async function runCodeAnalysis() {
           });
         } catch (err) {
           if (err.name === 'AbortError') throw err;
+          if (err.fatalDeConfiguracao) CodeState.configRecusada = err.message;
           ai = { error: err.message };
         }
+      } else if (useAI) {
+        ai = { error: CodeState.configRecusada, naoTentado: true };
       }
 
       bump(file.path);
