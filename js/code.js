@@ -570,7 +570,7 @@ async function humanizeFile(path, btn) {
  * São duas chamadas por arquivo (reescrever, reanalisar). A barra diz o total antes
  * de começar, e o botão de cancelar interrompe entre arquivos.
  */
-const PZ = { running: false, abort: null, itens: [] };
+const PZ = { running: false, abort: null, itens: [], interrompidoPor: null };
 
 function initProjectHumanize() {
   const raiz = $('rep-humanize');
@@ -612,6 +612,7 @@ async function runProjectHumanize() {
   PZ.running = true;
   PZ.abort = new AbortController();
   PZ.itens = [];
+  PZ.interrompidoPor = null;
   $('pz-run').disabled = true;
   show('pz-cancel', 'inline-flex');
   show('pz-progress', 'block');
@@ -678,6 +679,20 @@ async function runProjectHumanize() {
         item.causa = err.causa || item.erro;
         item.precisaWorkspace = !!err.precisaWorkspace;
         if (err.name === 'AbortError') break;
+
+        // Problema de conta — chave, permissão, workspace, limite de gasto — é igual para
+        // todos os arquivos. Depois da primeira resposta dizendo o que falta, insistir nos
+        // outros 76 só gasta tempo e enche o registro de diagnóstico.
+        if (err.fatalDeConfiguracao) {
+          PZ.interrompidoPor = item.causa;
+          const restantes = arquivos.slice(arquivos.indexOf(analise) + 1);
+          restantes.forEach(a => PZ.itens.push({
+            path: a.path, name: (CodeState.files.find(f => f.path === a.path) || {}).name || a.path,
+            antes: a.score, depois: null, codigo: null, changes: [], risk: 'nenhum',
+            erro: 'não tentado', causa: 'não tentado',
+            naoTentado: true }));
+          break;
+        }
       }
     }
   } finally {
@@ -722,7 +737,7 @@ function renderProjectHumanizeResult(reanalisado) {
         <td class="pz-arq">${escHtml(i.path)}</td>
         <td class="num" style="color:${getColor(i.antes)}">${i.antes}%</td>
         <td class="num">—</td>
-        <td class="num pz-igual">não reescrito</td>
+        <td class="num pz-igual">${i.naoTentado ? 'não tentado' : 'não reescrito'}</td>
       </tr>`;
     }
     const d = i.antes - i.depois;
@@ -739,13 +754,19 @@ function renderProjectHumanizeResult(reanalisado) {
   const falhas = new Map();
   itens.forEach(i => {
     const msg = i.erro || i.aviso;
-    if (!msg) return;
+    if (!msg || i.naoTentado) return;   // os não tentados entram no aviso de interrupção
     const chave = i.causa || msg;
     if (!falhas.has(chave)) falhas.set(chave, { msg, arquivos: [], precisaWorkspace: false });
     const grupo = falhas.get(chave);
     grupo.arquivos.push(i.path);
     if (i.precisaWorkspace) grupo.precisaWorkspace = true;
   });
+  const naoTentados = itens.filter(i => i.naoTentado).length;
+  const avisoParada = PZ.interrompidoPor && naoTentados ? `
+    <div class="hz-warn">Parei na primeira falha: o problema é de configuração e vale igual
+      para todos os arquivos, então repetir nos outros ${naoTentados} só gastaria tempo.
+      Depois de corrigir, clique de novo e a reescrita recomeça do zero.</div>` : '';
+
   const blocoFalhas = [...falhas.values()].map(({ msg, arquivos, precisaWorkspace }) => `
     <div class="hz-erro">
       <div class="pz-falha-msg">${escHtml(msg)}</div>
@@ -790,6 +811,7 @@ function renderProjectHumanizeResult(reanalisado) {
           if (rean === feitos.length) return ', com o percentual medido de novo sobre o código reescrito';
           return `, ${rean} com o percentual reanalisado e ${feitos.length - rean} só pela heurística local`;
         })()}.</div>
+      ${avisoParada}
       ${blocoFalhas}
       ${risco.length ? `<div class="hz-erro">${risco.length} arquivo(s) com risco declarado de
         mudança de comportamento: ${risco.map(i => escHtml(i.path)).join(', ')}. Compare com o

@@ -1300,6 +1300,85 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
       "com tudo funcionando o veredito ainda aponta problema");
   });
 
+
+  // ─────────────────────────────────────────────────────────────
+  //  27. Problema de conta para na primeira falha
+  // ─────────────────────────────────────────────────────────────
+  // 77 chamadas, todas com o mesmo erro de configuração, foi o que o usuário viu. Chave
+  // sem workspace, chave inválida, sem permissão ou limite de gasto são problemas da
+  // conta: iguais para todo arquivo. Insistir só gasta tempo e lota o registro.
+  await cenario("erro de configuração para na primeira falha", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-parar'].join('-');
+                 App.workspaceId = '';`);
+    await soltarArquivos(MUITOS.slice(0, 20));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 20`, 120),
+      "sem relatório");
+
+    await rodar(`API.status = 400; API.chamadas = [];
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace, '
+                   + 'so this request must include the anthropic-workspace-id header.' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('.pz-result')`, 120), "não terminou");
+
+    const r = await val(`({
+      chamadas: API.chamadas.length,
+      linhas: document.querySelectorAll('.pz-table tbody tr').length,
+      naoTentados: [...document.querySelectorAll('.pz-table tbody tr')]
+        .filter(tr => /não tentado/.test(tr.textContent)).length,
+      avisoParada: /Parei na primeira falha/.test(document.querySelector('.pz-result').textContent),
+      avisos: document.querySelectorAll('.pz-result .hz-erro').length
+    })`);
+    exigir(r.chamadas === 1,
+      `gastou ${r.chamadas} chamadas para um erro de conta que já estava explicado na 1ª`);
+    exigir(r.linhas === 20, `a tabela perdeu arquivos: ${r.linhas} de 20`);
+    exigir(r.naoTentados === 19,
+      `${r.naoTentados} marcados como não tentados, esperava 19`);
+    exigir(r.avisoParada, "não explicou por que parou");
+    exigir(r.avisos === 1, `${r.avisos} avisos em vez de um só`);
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("erro de um arquivo só não interrompe os outros", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-seguir'].join('-');
+                 App.workspaceId = 'wrkspc_ok';`);
+    await soltarArquivos(CAMINHOS.slice(0, 5));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 5`, 90),
+      "sem relatório");
+
+    // o terceiro arquivo devolve algo que não dá para ler; os outros seguem
+    await rodar(`API.chamadas = [];
+      let n = 0;
+      API.texto = prompt => {
+        if (!/rewritten/.test(prompt))
+          return JSON.stringify({ score: 20, confidence: 'alta', verdict: 'v', signals: [],
+                                  hotspots: [], suggestions: [], summary: 's' });
+        n++;
+        if (n === 3) return 'desculpe, não consigo reescrever isso';
+        return JSON.stringify({ rewritten: 'const a = 1;', changes: [], kept: [],
+                                risk: 'nenhum', note: '' });
+      };
+      document.getElementById('pz-reanalyze').checked = false;
+      document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('.pz-result')`, 120), "não terminou");
+
+    const r = await val(`({
+      chamadas: API.chamadas.length,
+      naoTentados: [...document.querySelectorAll('.pz-table tbody tr')]
+        .filter(tr => /não tentado/.test(tr.textContent)).length,
+      avisoParada: /Parei na primeira falha/.test(document.querySelector('.pz-result').textContent)
+    })`);
+    exigir(r.chamadas === 5, `parou cedo demais: ${r.chamadas} chamadas de 5`);
+    exigir(r.naoTentados === 0, "marcou arquivos como não tentados por causa de um erro isolado");
+    exigir(!r.avisoParada, "disse que parou, mas foi até o fim");
+  });
+
   ws.close(); chrome.kill();
   console.log(`cenários: ${ok.length} passaram, ${falhas.length} falharam`);
   ok.forEach(x => console.log("  ✓", x));

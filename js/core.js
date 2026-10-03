@@ -485,6 +485,12 @@ async function listarWorkspaces() {
   return (corpo?.data || []).filter(w => !w.archived_at);
 }
 
+/** Marca o erro como problema de conta: repetir por arquivo não muda nada. */
+function comoFatal(err) {
+  err.fatalDeConfiguracao = true;
+  return err;
+}
+
 /**
  * Monta a mensagem de erro sem esconder o que a API disse.
  *
@@ -498,6 +504,9 @@ function montarErro(dica, detalhe, requestId) {
   if (detalhe) partes.push('A API respondeu: "' + detalhe + '"');
   if (requestId) partes.push('(request-id: ' + requestId + ')');
   const err = new Error(partes.join(' '));
+  // Problema de conta ou de configuração: vale igual para todo arquivo, então quem está
+  // percorrendo uma lista deve parar em vez de repetir a mesma falha dezenas de vezes.
+  err.fatalDeConfiguracao = false;
   // A causa, sem o request-id. O identificador muda a cada chamada, então usá-lo para
   // agrupar transformaria uma falha repetida em 72 avisos diferentes na tela.
   err.causa = dica + (detalhe ? ' | ' + detalhe : '');
@@ -562,8 +571,8 @@ async function callClaude(prompt, opts = {}) {
     anotar(detail);
 
     if (response.status === 401) {
-      throw (montarErro('Chave de API inválida, revogada ou sem permissão. '
-        + 'Confira em console.anthropic.com.', detail, requestId));
+      throw (comoFatal(montarErro('Chave de API inválida, revogada ou sem permissão. '
+        + 'Confira em console.anthropic.com.', detail, requestId)));
     }
 
     if (response.status === 400) {
@@ -571,10 +580,10 @@ async function callClaude(prompt, opts = {}) {
       // este erro se repetir: quem bateu no limite de gasto lia "preencha o campo
       // Workspace", preenchia, e continuava no mesmo lugar.
       if (/spend limit|usage limit|limite de gasto|credit balance|billing/i.test(detail)) {
-        throw (montarErro('Limite de gasto atingido na organização ou no workspace. '
-          + 'Isto não se resolve na página: ajuste o limite em console.anthropic.com → '
-          + 'Settings → Limits (ou Workspaces → o workspace → Spend limits).',
-          detail, requestId));
+        throw (comoFatal(montarErro('Limite de gasto atingido na organização ou no '
+          + 'workspace. Isto não se resolve na página: ajuste o limite em '
+          + 'console.anthropic.com → Settings → Limits (ou Workspaces → o workspace → '
+          + 'Spend limits).', detail, requestId)));
       }
       if (/workspace/i.test(detail)) {
         // Vale só para chave de vários workspaces: ela escolhe o workspace a cada
@@ -588,14 +597,15 @@ async function callClaude(prompt, opts = {}) {
           + 'resolve sozinha e dispensa qualquer campo aqui. Se preferir continuar com esta '
           + 'chave, informe abaixo o ID do workspace (começa com wrkspc_).', detail, requestId);
         errWs.precisaWorkspace = true;
+        comoFatal(errWs);
         throw errWs;
       }
       throw (montarErro('A API recusou a requisição.', detail, requestId));
     }
 
     if (response.status === 403) {
-      throw (montarErro('A chave não tem permissão para este recurso. Confira o '
-        + 'acesso da sua conta ao workspace em console.anthropic.com.', detail, requestId));
+      throw (comoFatal(montarErro('A chave não tem permissão para este recurso. Confira '
+        + 'o acesso da sua conta ao workspace em console.anthropic.com.', detail, requestId)));
     }
     if (response.status === 429) {
       throw (montarErro('Limite de requisições atingido. Aguarde um momento e '
