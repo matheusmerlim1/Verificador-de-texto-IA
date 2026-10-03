@@ -1148,6 +1148,68 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     await rodar(`API.listaStatus = 200; API.listaCorpo = null; API.status = 200; API.corpo = null;`);
   });
 
+
+  // ─────────────────────────────────────────────────────────────
+  //  25. O HTML não pode ter comentário quebrado
+  // ─────────────────────────────────────────────────────────────
+  // Um script meu inseriu um comentário dentro de outro: o de fora fechava cedo, sobrava
+  // um </body> de verdade no meio da página e um "=== -->" aparecia como texto na tela.
+  // O navegador é tolerante e segue renderizando, então isso passa despercebido sem teste.
+  await cenario("o HTML não tem comentário quebrado nem marcação solta", async () => {
+    await abrir();
+    const r = await val(`(() => {
+      const solto = [];
+      const andarilho = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = andarilho.nextNode(); n; n = andarilho.nextNode()) {
+        const t = n.textContent;
+        if (t.includes('-->') || t.includes('<!--')) solto.push(t.trim().slice(0, 60));
+      }
+      return { solto, corpos: document.querySelectorAll('body').length,
+               depoisDoBody: document.body.nextElementSibling
+                 ? document.body.nextElementSibling.tagName : '' };
+    })()`);
+    exigir(!r.solto.length,
+      'marcação de comentário virou texto na tela: ' + r.solto.join(' | '));
+    exigir(r.corpos === 1, 'a página tem ' + r.corpos + ' body');
+  });
+
+
+  await cenario("busca barrada pelo navegador explica a saída manual", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-cors'].join('-');
+                 App.workspaceId = '';`);
+    await soltarArquivos(CAMINHOS.slice(0, 3));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 3`, 90),
+      "sem relatório");
+    await rodar(`API.status = 400;
+                 API.corpo = { error: { message: 'not scoped to a workspace: include the '
+                   + 'anthropic-workspace-id header' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('[data-ws-listar]')`, 120), "sem o botão");
+
+    // o navegador barrando a chamada chega como TypeError, igual a um bloqueio de CORS
+    await rodar(`
+      const anterior = window.fetch;
+      window.fetch = async (url, opts) => {
+        if (String(url).includes('/organizations/workspaces'))
+          throw new TypeError('Failed to fetch');
+        return anterior(url, opts);
+      };
+      document.querySelector('[data-ws-listar]').click();`);
+    await esperar(900);
+    const aviso = await rodar(`document.querySelector('[data-ws-aviso]').textContent`);
+    exigir(!/^Failed to fetch$/.test(aviso.trim()),
+      "mostrou só 'Failed to fetch', que não diz nada a quem está usando");
+    exigir(/Console/.test(aviso) && /wrkspc_/.test(aviso),
+      "não apontou a saída manual: " + aviso);
+    exigir(await rodar(`!!document.querySelector('[data-ws-form] input')`),
+      "sumiu com o campo manual, que é justamente a saída neste caso");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
   ws.close(); chrome.kill();
   console.log(`cenários: ${ok.length} passaram, ${falhas.length} falharam`);
   ok.forEach(x => console.log("  ✓", x));

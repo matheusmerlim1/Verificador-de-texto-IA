@@ -326,7 +326,17 @@ async function listarWorkspaces() {
   } catch (erroDeRede) {
     registrarDiag({ status: 'rede', ms: Date.now() - comecou, mandouWorkspace: 'n/a',
       erro: 'listar workspaces — ' + erroDeRede.name + ': ' + erroDeRede.message });
-    throw erroDeRede;
+    // "Failed to fetch" não explica nada a quem está só tentando usar a ferramenta. O
+    // motivo quase sempre é o navegador barrando a chamada por CORS: a liberação de
+    // chamada direta vale para a API de mensagens, e o endereço de administração pode
+    // não aceitá-la. Nesse caso, a saída é o campo manual logo acima.
+    const err = new Error('O navegador barrou a busca (' + erroDeRede.message + '). O '
+      + 'endereço que lista os workspaces pode não aceitar chamada direta de página. '
+      + 'Pegue o ID no Console e cole no campo acima: console.anthropic.com → Settings → '
+      + 'Workspaces → clique no workspace; o ID aparece no endereço da página, começando '
+      + 'com wrkspc_.');
+    err.causa = 'listar workspaces barrado pelo navegador';
+    throw err;
   }
 
   const requestId = response.headers?.get('request-id') || '';
