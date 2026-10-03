@@ -300,6 +300,54 @@ function diagnosticoTexto() {
   return cab + linhas.join('\n\n');
 }
 
+const WORKSPACES_URL = 'https://api.anthropic.com/v1/organizations/workspaces';
+
+/**
+ * Lista os workspaces da organização usando a chave que já está na página.
+ *
+ * Funciona porque os endpoints de administração aceitam uma chave pessoal ou de conta de
+ * serviço que não esteja limitada a um workspace — que é exatamente a chave que cai no
+ * erro de escopo. Quem precisa do ID é quem pode buscá-lo.
+ *
+ * O Workspace Padrão não aparece nesta lista: é assim que a API funciona, e o aviso na
+ * tela diz isso para ninguém achar que sumiu algo.
+ */
+async function listarWorkspaces() {
+  const comecou = Date.now();
+  let response;
+  try {
+    response = await fetch(WORKSPACES_URL + '?limit=100', {
+      headers: {
+        'x-api-key': App.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    });
+  } catch (erroDeRede) {
+    registrarDiag({ status: 'rede', ms: Date.now() - comecou, mandouWorkspace: 'n/a',
+      erro: 'listar workspaces — ' + erroDeRede.name + ': ' + erroDeRede.message });
+    throw erroDeRede;
+  }
+
+  const requestId = response.headers?.get('request-id') || '';
+  let detail = '';
+  let corpo = null;
+  try { corpo = await response.json(); } catch (_) { /* corpo não-JSON */ }
+  if (corpo?.error?.message) detail = corpo.error.message;
+
+  registrarDiag({ status: response.status, ms: Date.now() - comecou,
+    mandouWorkspace: 'n/a (listando workspaces)', requestId,
+    workspaceResposta: response.headers?.get('anthropic-workspace-id') || '',
+    detalhe: detail || 'listar workspaces: ' + (corpo?.data?.length ?? 0) + ' encontrado(s)' });
+
+  if (!response.ok) {
+    throw montarErro('Não deu para listar os workspaces com esta chave. Chave limitada a '
+      + 'um workspace e chave de administração não servem aqui; nesse caso pegue o ID no '
+      + 'Console.', detail, requestId);
+  }
+  return (corpo?.data || []).filter(w => !w.archived_at);
+}
+
 /**
  * Monta a mensagem de erro sem esconder o que a API disse.
  *

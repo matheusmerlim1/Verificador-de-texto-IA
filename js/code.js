@@ -752,7 +752,9 @@ function renderProjectHumanizeResult(reanalisado) {
         <input type="text" id="pz-ws-input" class="apikey-input" placeholder="wrkspc_..."
                value="${escHtml(App.workspaceId || '')}" autocomplete="off" spellcheck="false" />
         <button type="submit" class="btn btn-primary btn-sm">Salvar e tentar de novo</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ws-listar>🔎 Buscar meus workspaces</button>
         <span class="pz-ws-aviso" data-ws-aviso></span>
+        <div class="pz-ws-lista" data-ws-lista hidden></div>
       </form>` : ''}
       <div class="pz-falha-arqs">${arquivos.length} arquivo(s): ${
         arquivos.slice(0, 8).map(a => `<code>${escHtml(a)}</code>`).join(' ')}${
@@ -818,6 +820,49 @@ function initWorkspaceForm(raiz) {
   raiz.querySelectorAll('[data-ws-form]').forEach(form => {
     const campo = form.querySelector('input');
     const aviso = form.querySelector('[data-ws-aviso]');
+    const lista = form.querySelector('[data-ws-lista]');
+    const buscar = form.querySelector('[data-ws-listar]');
+
+    // Buscar a lista em vez de mandar procurar o ID: a mesma chave que cai no erro de
+    // escopo é a que tem permissão para listar os workspaces da organização.
+    if (buscar) buscar.addEventListener('click', async () => {
+      const rotulo = buscar.textContent;
+      buscar.disabled = true;
+      buscar.textContent = 'Buscando…';
+      aviso.textContent = '';
+      aviso.className = 'pz-ws-aviso';
+      try {
+        const ws = await listarWorkspaces();
+        if (!ws.length) {
+          aviso.textContent = 'A organização não tem workspaces além do Padrão, que não '
+            + 'aparece nesta lista. Use uma chave criada dentro de um workspace.';
+          aviso.className = 'pz-ws-aviso erro';
+          return;
+        }
+        lista.hidden = false;
+        lista.innerHTML = '<div class="pz-ws-lista-tit">Escolha onde gastar:</div>'
+          + ws.map(w => `<button type="button" class="btn btn-ghost btn-sm" `
+              + `data-ws-escolher="${escHtml(w.id)}">${escHtml(w.name)} `
+              + `<code>${escHtml(w.id)}</code></button>`).join('')
+          + '<div class="pz-ws-nota">O Workspace Padrão não aparece aqui — é assim que a '
+          + 'API responde. Se for ele que você quer, crie a chave dentro dele.</div>';
+        lista.querySelectorAll('[data-ws-escolher]').forEach(b => {
+          b.addEventListener('click', () => {
+            campo.value = b.dataset.wsEscolher;
+            definirWorkspace(campo.value);
+            aviso.textContent = 'Escolhido. Recomeçando…';
+            aviso.className = 'pz-ws-aviso ok';
+            runProjectHumanize();
+          });
+        });
+      } catch (err) {
+        aviso.textContent = err.message || String(err);
+        aviso.className = 'pz-ws-aviso erro';
+      } finally {
+        buscar.disabled = false;
+        buscar.textContent = rotulo;
+      }
+    });
     form.addEventListener('submit', ev => {
       ev.preventDefault();
       const valor = campo.value.trim();

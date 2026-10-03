@@ -86,9 +86,27 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
       corpo: null,            // erro em JSON, quando status != 200
       texto: null,            // o texto da resposta; função ou string
       atraso: 0,
-      falharApos: null        // a partir da n-ésima chamada, falha
+      falharApos: null,       // a partir da n-ésima chamada, falha
+      listas: [],             // requisições feitas ao endpoint de workspaces
+      listaStatus: 200,
+      listaCorpo: null,
+      listaDados: [
+        { id: 'wrkspc_producao', name: 'Produção', archived_at: null },
+        { id: 'wrkspc_estudos',  name: 'Estudos',  archived_at: null },
+        { id: 'wrkspc_velho',    name: 'Arquivado', archived_at: '2026-01-01T00:00:00Z' }
+      ]
     };
     window.fetch = async (url, opts) => {
+      // O endpoint que lista os workspaces: outro caminho, outra resposta.
+      if (String(url).includes('/organizations/workspaces')) {
+        API.listas.push({ headers: opts.headers, url: String(url) });
+        const h = new Headers({ 'request-id': 'req_ws_' + API.listas.length });
+        if (API.listaStatus !== 200)
+          return { ok: false, status: API.listaStatus, headers: h,
+                   json: async () => API.listaCorpo
+                     || { error: { message: 'This API key cannot access the Admin API' } } };
+        return { ok: true, status: 200, headers: h, json: async () => ({ data: API.listaDados }) };
+      }
       const body = JSON.parse(opts.body);
       API.chamadas.push({ headers: opts.headers, body, prompt: body.messages[0].content });
       if (opts.signal && opts.signal.aborted) { const e = new Error('abort'); e.name = 'AbortError'; throw e; }
@@ -1038,6 +1056,96 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     exigir(r.campoDoTopo === 'wrkspc_preenchido_no_erro',
       "o campo da barra do topo ficou fora de sincronia: " + r.campoDoTopo);
     exigir(!r.aindaPedindo, "o campo continuou marcado como pendente depois de preenchido");
+  });
+
+
+  // ─────────────────────────────────────────────────────────────
+  //  24. Buscar o workspace em vez de caçar o ID
+  // ─────────────────────────────────────────────────────────────
+  await cenario("a página busca os workspaces com a chave que já tem", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-picker'].join('-');
+                 App.workspaceId = '';`);
+    await soltarArquivos(CAMINHOS.slice(0, 4));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 4`, 90),
+      "sem relatório");
+    await rodar(`API.status = 400;
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace, '
+                   + 'so this request must include the anthropic-workspace-id header.' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('[data-ws-listar]')`, 120),
+      "o botão de buscar workspaces não apareceu junto do erro");
+
+    await rodar(`API.listas = []; document.querySelector('[data-ws-listar]').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('[data-ws-escolher]').length`, 60),
+      "a lista de workspaces não apareceu");
+
+    const r = await val(`({
+      opcoes: [...document.querySelectorAll('[data-ws-escolher]')].map(b => b.dataset.wsEscolher),
+      cabecalhos: API.listas[0].headers,
+      url: API.listas[0].url,
+      nota: (document.querySelector('.pz-ws-nota') || {}).textContent || ''
+    })`);
+    exigir(r.opcoes.length === 2,
+      "esperava 2 workspaces ativos, veio " + r.opcoes.length + ": " + r.opcoes.join(", "));
+    exigir(!r.opcoes.includes('wrkspc_velho'), "ofereceu um workspace arquivado");
+    exigir(r.cabecalhos['x-api-key'], "a busca foi sem a chave");
+    exigir(r.cabecalhos['anthropic-dangerous-direct-browser-access'] === 'true',
+      "sem a liberação de chamada direta, o navegador barra por CORS");
+    exigir(/Padrão/.test(r.nota), "não avisou que o Workspace Padrão não entra na lista");
+  });
+
+  await cenario("escolher da lista manda o cabeçalho e recomeça", async () => {
+    await rodar(`API.status = 200; API.corpo = null; API.chamadas = [];
+                 document.querySelector('[data-ws-escolher="wrkspc_estudos"]').click()`);
+    exigir(await esperarPor(`API.chamadas.length > 0`, 60), "não recomeçou depois de escolher");
+    await esperarPor(`document.querySelector('.pz-result')`, 120);
+    const r = await val(`({
+      cabecalho: API.chamadas[0].headers['anthropic-workspace-id'],
+      guardado: localStorage.getItem('dlm_workspace_id'),
+      campoDoTopo: (document.getElementById('workspace-input') || {}).value
+    })`);
+    exigir(r.cabecalho === 'wrkspc_estudos',
+      "o workspace escolhido não foi no cabeçalho: " + r.cabecalho);
+    exigir(r.guardado === 'wrkspc_estudos', "não ficou guardado: " + r.guardado);
+    exigir(r.campoDoTopo === 'wrkspc_estudos', "o campo do topo ficou fora de sincronia");
+  });
+
+  await cenario("busca recusada mostra o motivo, sem travar a tela", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-semadmin'].join('-');
+                 App.workspaceId = '';`);
+    await soltarArquivos(CAMINHOS.slice(0, 3));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 3`, 90),
+      "sem relatório");
+    await rodar(`API.status = 400;
+                 API.corpo = { error: { message: 'not scoped to a workspace: include the '
+                   + 'anthropic-workspace-id header' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('[data-ws-listar]')`, 120), "sem o botão");
+
+    await rodar(`API.listaStatus = 403;
+                 API.listaCorpo = { error: { message: 'Workspace-scoped keys cannot do this' } };
+                 document.querySelector('[data-ws-listar]').click()`);
+    await esperar(800);
+    const r = await val(`({
+      aviso: document.querySelector('[data-ws-aviso]').textContent,
+      botaoVivo: !document.querySelector('[data-ws-listar]').disabled,
+      rotulo: document.querySelector('[data-ws-listar]').textContent,
+      campoVivo: !!document.querySelector('[data-ws-form] input')
+    })`);
+    exigir(r.aviso.includes('Workspace-scoped keys cannot do this'),
+      "escondeu o motivo que a API deu: " + r.aviso);
+    exigir(r.botaoVivo, "o botão ficou travado depois da recusa");
+    exigir(!/Buscando/.test(r.rotulo), "o botão ficou preso em 'Buscando…'");
+    exigir(r.campoVivo, "sumiu com o campo manual, que é a saída quando a busca não serve");
+    await rodar(`API.listaStatus = 200; API.listaCorpo = null; API.status = 200; API.corpo = null;`);
   });
 
   ws.close(); chrome.kill();

@@ -1314,3 +1314,9 @@ textarea::placeholder{ color: var(--muted); opacity: .55; }
 .pz-ws-aviso { font-size: 12px; flex-basis: 100%; }
 .pz-ws-aviso.erro { color: var(--accent); }
 .pz-ws-aviso.ok { color: var(--green); }
+
+/* Lista de workspaces trazida da API: escolher é mais seguro que digitar um ID. */
+.pz-ws-lista { flex-basis: 100%; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.pz-ws-lista-tit { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.pz-ws-lista code { font-family: var(--mono); font-size: 11px; opacity: .7; margin-left: 4px; }
+.pz-ws-nota { flex-basis: 100%; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
