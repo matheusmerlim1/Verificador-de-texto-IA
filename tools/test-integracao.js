@@ -306,7 +306,16 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     exigir(h["anthropic-version"] === "2023-06-01", "versão da API: " + h["anthropic-version"]);
     exigir(h["anthropic-dangerous-direct-browser-access"] === "true",
       "sem a liberação de chamada direta do browser, o navegador barra por CORS");
-    exigir(!h["anthropic-workspace-id"], "mandou workspace sem o campo preenchido");
+    // O cabeçalho do workspace é condicional: vai quando há um configurado — pelo campo
+    // ou pelo config.js — e não vai quando não há. A cópia privada traz um no config.js,
+    // então comparar com o estado é mais honesto do que exigir ausência sempre.
+    const wsConfigurado = await rodar(`App.workspaceId || ''`);
+    if (wsConfigurado)
+      exigir(h["anthropic-workspace-id"] === wsConfigurado,
+        `há workspace configurado (${wsConfigurado}) mas o cabeçalho foi `
+        + `"${h["anthropic-workspace-id"]}"`);
+    else
+      exigir(!h["anthropic-workspace-id"], "mandou workspace sem haver um configurado");
   });
 
   // ─────────────────────────────────────────────────────────────
@@ -1406,6 +1415,55 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     exigir(r.comScore === 20,
       "a análise deixou de pontuar arquivos — a heurística local é offline e deveria valer "
       + "para todos mesmo sem a IA");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+
+  // ─────────────────────────────────────────────────────────────
+  //  28. Sem saldo não é limite de gasto
+  // ─────────────────────────────────────────────────────────────
+  // Os dois dão 400 e os dois falam de cobrança, mas se resolvem em telas diferentes:
+  // saldo zerado é Plans & Billing; teto atingido é Settings → Limits. Confundir manda
+  // a pessoa mexer no limite quando o que falta é comprar crédito.
+  await cenario("sem saldo aponta Plans & Billing, não o limite", async () => {
+    await abrir();
+    await rodar(`App.apiKey = ['sk','ant','api03-de-mentira-saldo'].join('-')`);
+    const semSaldo = await rodar(`(async () => {
+      API.status = 400;
+      API.corpo = { error: { message: 'Your credit balance is too low to access the '
+        + 'Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.' } };
+      try { await callClaude('oi', { etapa: 'análise do projeto' }); return 'NAO FALHOU'; }
+      catch (e) { return e.message; }
+    })()`);
+    exigir(/sem saldo/i.test(semSaldo), "não reconheceu saldo zerado: " + semSaldo);
+    exigir(/Plans & Billing/.test(semSaldo), "não apontou onde comprar crédito");
+    exigir(!/Settings → Limits/.test(semSaldo),
+      "mandou mexer no limite, que não resolve falta de saldo");
+    exigir(/Pro ou Max/.test(semSaldo),
+      "não avisou que a assinatura do Claude é separada da API — é a confusão mais comum");
+
+    const teto = await rodar(`(async () => {
+      API.corpo = { error: { message: 'You have reached your monthly spend limit' } };
+      try { await callClaude('oi', { etapa: 'análise do projeto' }); return 'NAO FALHOU'; }
+      catch (e) { return e.message; }
+    })()`);
+    exigir(/Settings → Limits/.test(teto), "não apontou o limite: " + teto);
+    exigir(!/Plans & Billing/.test(teto), "mandou comprar crédito para um teto atingido");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("sem saldo também para na primeira chamada", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-saldo2'].join('-');
+                 API.status = 400; API.chamadas = [];
+                 API.corpo = { error: { message: 'Your credit balance is too low' } };`);
+    await soltarArquivos(MUITOS.slice(0, 15));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 15`, 120),
+      "sem relatório");
+    const n = await rodar(`API.chamadas.length`);
+    exigir(n <= 6, `gastou ${n} chamadas para 15 arquivos com a conta sem saldo`);
     await rodar(`API.status = 200; API.corpo = null;`);
   });
 

@@ -345,9 +345,15 @@ function diagnosticoTexto() {
           + 'sozinha e nenhum campo precisa ser preenchido. A alternativa é descobrir o ID '
           + 'do workspace e informá-lo no campo — mas o Workspace Padrão não aparece em '
           + 'listagem nenhuma, por desenho da API.');
-      } else if (/spend limit|usage limit|credit balance|billing/i.test(g.texto)) {
+      } else if (/credit balance|purchase credits|insufficient|billing/i.test(g.texto)) {
         vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
-          + '\nO QUÊ: limite de gasto atingido. Não é problema de configuração da página.'
+          + '\nO QUÊ: a conta está sem saldo na API. Nada na página nem na chave muda isso.'
+          + '\nRESOLVE: comprar crédito em console.anthropic.com → Plans & Billing. '
+          + 'Atenção: assinatura do Claude (Pro ou Max) é separada da API e não dá saldo '
+          + 'a ela.');
+      } else if (/spend limit|usage limit/i.test(g.texto)) {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
+          + '\nO QUÊ: limite de gasto atingido — há saldo, mas o teto foi alcançado.'
           + '\nRESOLVE: console.anthropic.com → Settings → Limits.');
       } else if (g.status === 401) {
         vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
@@ -579,9 +585,18 @@ async function callClaude(prompt, opts = {}) {
       // Duas causas diferentes de 400 falam em workspace, e confundi-las foi o que fez
       // este erro se repetir: quem bateu no limite de gasto lia "preencha o campo
       // Workspace", preenchia, e continuava no mesmo lugar.
-      if (/spend limit|usage limit|limite de gasto|credit balance|billing/i.test(detail)) {
+      // Saldo zerado e limite de gasto são problemas diferentes, resolvidos em telas
+      // diferentes. Tratá-los como um só mandaria mexer no limite quando o que falta é
+      // comprar crédito — e o limite, por maior que fosse, não adiantaria.
+      if (/credit balance|purchase credits|insufficient|billing/i.test(detail)) {
+        throw (comoFatal(montarErro('A conta está sem saldo na API. Isto não se resolve na '
+          + 'página nem trocando a chave: é preciso comprar crédito em '
+          + 'console.anthropic.com → Plans & Billing. A assinatura do Claude (Pro ou Max) é '
+          + 'separada da API e não dá saldo a ela.', detail, requestId)));
+      }
+      if (/spend limit|usage limit|limite de gasto/i.test(detail)) {
         throw (comoFatal(montarErro('Limite de gasto atingido na organização ou no '
-          + 'workspace. Isto não se resolve na página: ajuste o limite em '
+          + 'workspace. Há saldo, mas o teto configurado foi alcançado: ajuste em '
           + 'console.anthropic.com → Settings → Limits (ou Workspaces → o workspace → '
           + 'Spend limits).', detail, requestId)));
       }
