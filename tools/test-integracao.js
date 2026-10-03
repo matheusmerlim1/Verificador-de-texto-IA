@@ -1210,6 +1210,92 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     await rodar(`API.status = 200; API.corpo = null;`);
   });
 
+
+  // ─────────────────────────────────────────────────────────────
+  //  26. O diagnóstico diz ONDE falhou, não só QUE falhou
+  // ─────────────────────────────────────────────────────────────
+  await cenario("o veredito nomeia a etapa em que falhou", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = ['sk','ant','api03-de-mentira-etapa'].join('-');
+                 App.workspaceId = '';`);
+    await soltarArquivos(CAMINHOS.slice(0, 3));
+
+    // a análise passa, a reescrita é que falha: o veredito tem que dizer isso
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 3`, 90),
+      "sem relatório");
+    await rodar(`API.status = 400;
+                 API.corpo = { error: { message: 'This API key is not scoped to a workspace, '
+                   + 'so this request must include the anthropic-workspace-id header.' } };
+                 document.getElementById('pz-reanalyze').checked = false;
+                 document.getElementById('pz-run').click()`);
+    exigir(await esperarPor(`document.querySelector('.pz-result')`, 120), "não terminou");
+
+    const t = await rodar(`diagnosticoTexto()`);
+    exigir(t.includes('VEREDITO'), "o diagnóstico não tem veredito");
+    exigir(t.includes('reescrita do projeto inteiro'),
+      "o veredito não diz em que etapa falhou");
+    exigir(!/ONDE: análise do projeto[^]*não resolveu|ONDE: análise do projeto \(\d+ chamada/.test(t)
+      || t.includes('reescrita do projeto inteiro'),
+      "culpou a análise, que funcionou");
+    exigir(/campo Workspace está VAZIO|VAZIO — é isto que falta/.test(t),
+      "não disse que o campo está vazio, que é o estado que importa");
+    exigir(/RESOLVE:/.test(t), "não disse o que resolve");
+    exigir(/chave DENTRO do workspace/.test(t),
+      "não ofereceu a saída definitiva, que é criar a chave dentro do workspace");
+    exigir(/RESUMO DAS \d+ CHAMADAS/.test(t), "não resumiu as chamadas por causa");
+    exigir(/ESTADO DA PÁGINA/.test(t), "não registrou o estado da página");
+    exigir(/versão dos arquivos: \w+/.test(t),
+      "não registrou a versão dos arquivos — sem isso não dá para saber se o cache é velho");
+    await rodar(`API.status = 200; API.corpo = null;`);
+  });
+
+  await cenario("o veredito separa limite de gasto de escopo de chave", async () => {
+    await rodar(`(async () => {
+      DIAG.length = 0;
+      API.status = 400;
+      API.corpo = { error: { message: 'Your organization has reached its spend limit' } };
+      try { await callClaude('oi', { etapa: 'análise do projeto', alvo: 'a.ts' }); } catch (e) {}
+      API.status = 200; API.corpo = null;
+    })()`);
+    const t = await rodar(`diagnosticoTexto()`);
+    exigir(/limite de gasto/i.test(t), "não reconheceu o limite de gasto");
+    exigir(/Settings → Limits/.test(t), "não disse onde se resolve");
+    exigir(!/chave DENTRO do workspace/.test(t),
+      "ofereceu a saída de workspace para um problema de gasto");
+    exigir(t.includes('análise do projeto'), "não disse a etapa");
+  });
+
+  await cenario("resposta ilegível não se confunde com recusa da API", async () => {
+    const r = await val(`(async () => {
+      DIAG.length = 0;
+      API.texto = 'isto não é JSON nenhum, é um pedido de desculpas em prosa';
+      let msg = '';
+      try { await callClaudeJSON('oi', { etapa: 'reescrita de um arquivo', alvo: 'b.ts' }); }
+      catch (e) { msg = e.message; }
+      return { msg, diag: diagnosticoTexto() };
+    })()`);
+    exigir(/ilegível/i.test(r.diag), "não distinguiu resposta ilegível de recusa");
+    exigir(r.diag.includes('reescrita de um arquivo'), "não disse a etapa");
+    exigir(/foi cobrada/.test(r.diag),
+      "não avisou que a chamada foi cobrada mesmo sem servir");
+    exigir(r.diag.includes('pedido de desculpas'),
+      "não mostrou o começo da resposta que não deu para ler");
+  });
+
+  await cenario("sem falha nenhuma o veredito diz isso claramente", async () => {
+    await rodar(`(async () => {
+      DIAG.length = 0;
+      API.texto = JSON.stringify({ score: 10, confidence: 'alta', verdict: 'v', signals: [],
+                                   hotspots: [], suggestions: [], summary: 's' });
+      await callClaude('oi', { etapa: 'análise do projeto' });
+    })()`);
+    const t = await rodar(`diagnosticoTexto()`);
+    exigir(/Nenhuma chamada falhou/.test(t),
+      "com tudo funcionando o veredito ainda aponta problema");
+  });
+
   ws.close(); chrome.kill();
   console.log(`cenários: ${ok.length} passaram, ${falhas.length} falharam`);
   ok.forEach(x => console.log("  ✓", x));

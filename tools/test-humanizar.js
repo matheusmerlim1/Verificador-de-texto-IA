@@ -371,7 +371,7 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
         largura: limite,
         rolagem: doc.scrollWidth - limite,
         fora: fora.slice(0, 5),
-        vezes: res ? (res.textContent.match(/workspace/g) || []).length : 0,
+        avisos: document.querySelectorAll('.pz-result .hz-erro').length,
         linhas: document.querySelectorAll('.pz-table tbody tr').length
       });
     })()`));
@@ -379,8 +379,11 @@ const esperar = ms => new Promise(r => setTimeout(r, ms));
     // a tela larga primeiro
     const largo = await medir();
     if (largo.linhas !== 131) throw new Error("linhas na tabela: " + largo.linhas);
-    // a mensagem longa é a mesma para todos: uma vez só (o texto contém "workspace" 3x)
-    if (largo.vezes > 3) throw new Error("a mensagem se repetiu por arquivo (" + largo.vezes + " ocorrências de 'workspace')");
+    // A mesma causa vira um aviso só. Contar a palavra "workspace" no texto era um
+    // indicador frágil: quebrou sozinho quando o bloco de diagnóstico passou a mencioná-la.
+    // O que importa é quantos avisos foram desenhados.
+    if (largo.avisos !== 1)
+      throw new Error("a mesma falha virou " + largo.avisos + " avisos em vez de um só");
 
     // As duas colunas do modo código só existem acima de 820px — e é justamente lá que a
     // faixa 1fr pode crescer além do espaço e empurrar a página. Abaixo disso o layout já

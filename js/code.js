@@ -325,6 +325,7 @@ async function runCodeAnalysis() {
           ai = await callClaudeJSON(buildCodePrompt(file, content, h, f), {
             maxTokens: 2000,
             signal: CodeState.abort.signal,
+            etapa: 'análise do projeto', alvo: file.path,
           });
         } catch (err) {
           if (err.name === 'AbortError') throw err;
@@ -513,7 +514,7 @@ async function humanizeFile(path, btn) {
     const conteudo = await readFileText(entrada.file);
     const res = await callClaudeJSON(
       buildHumanizeCodePrompt(entrada, conteudo, analise, { intensidade }),
-      { maxTokens: 8000 });
+      { maxTokens: 8000, etapa: 'reescrita de um arquivo', alvo: entrada.path });
 
     const codigo = String(res.rewritten || '');
     if (!codigo.trim()) throw new Error('a resposta veio sem o arquivo reescrito');
@@ -639,7 +640,8 @@ async function runProjectHumanize() {
         avanca(`Reescrevendo ${analise.path}…`);
         const res = await callClaudeJSON(
           buildHumanizeCodePrompt(entrada, conteudo, analise, { intensidade }),
-          { maxTokens: 8000, signal: PZ.abort.signal });
+          { maxTokens: 8000, signal: PZ.abort.signal,
+            etapa: 'reescrita do projeto inteiro', alvo: entrada.path });
 
         item.codigo  = String(res.rewritten || '');
         item.changes = res.changes || [];
@@ -660,7 +662,8 @@ async function runProjectHumanize() {
             const f2 = runForensics(item.codigo, { mode: 'code' });
             const ai2 = await callClaudeJSON(
               buildCodePrompt(entrada, item.codigo, h, f2),
-              { maxTokens: 2000, signal: PZ.abort.signal });
+              { maxTokens: 2000, signal: PZ.abort.signal,
+                etapa: 'reanálise do código reescrito', alvo: entrada.path });
             item.depois = buildFileResult(entrada, h, ai2, f2).score;
             item.medidaDepois = 'reanalisado';
           } catch (err2) {

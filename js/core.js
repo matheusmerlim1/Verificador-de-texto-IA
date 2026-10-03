@@ -253,6 +253,16 @@ function initApiKey() {
  * A chave nunca entra aqui inteira: só o prefixo, os quatro últimos caracteres e o
  * tamanho. Dá para saber QUAL chave é sem expor nenhuma.
  */
+/**
+ * Por que alguns cabeçalhos aparecem vazios no diagnóstico.
+ *
+ * A página roda em outra origem que a API. Numa chamada assim, o navegador só entrega ao
+ * JavaScript os cabeçalhos da lista segura — os demais chegam na resposta, mas ficam
+ * invisíveis para o código, a não ser que o servidor os libere um a um. Não é defeito da
+ * página nem da chave; escrever "(sem)" fazia parecer que era.
+ */
+const SEM_CABECALHO = '(o navegador não deixa a página ler este cabeçalho)';
+
 const DIAG = [];
 const DIAG_MAX = 50;
 
@@ -268,37 +278,141 @@ function registrarDiag(entrada) {
   if (DIAG.length > DIAG_MAX) DIAG.shift();
 }
 
-/** O registro em texto, pronto para copiar e mandar para quem for ajudar. */
+/**
+ * O relatório de diagnóstico, pronto para copiar.
+ *
+ * Abre com o veredito — o que está falhando e o que resolve — porque quem lê isto está
+ * travado e precisa da conclusão, não de 50 linhas para interpretar. Depois vêm o estado
+ * da página, o resumo por causa e, por último, o detalhe das últimas chamadas.
+ */
 function diagnosticoTexto() {
-  if (!DIAG.length) return 'Nenhuma chamada à API foi feita nesta sessão.';
-  const cab = [
-    'DIAGNÓSTICO — Verificador de texto IA',
-    'gerado em: ' + new Date().toISOString(),
+  const linha = '─'.repeat(70);
+
+  // ── o que a página sabe sobre si mesma ──
+  const versao = (document.querySelector('link[href*="style.css"]') || {}).href || '';
+  const estado = [
     'chave: ' + marcaDaChave(App.apiKey),
-    'campo Workspace: ' + (App.workspaceId ? App.workspaceId : '(vazio)'),
-    'workspace que a API respondeu: ' + (App.workspaceDaResposta || '(a API não informou)'),
+    'a chave veio de: ' + (App.embedded ? 'config.js (cópia com chave cadastrada)'
+                                        : 'campo na tela / navegador'),
+    'campo Workspace: ' + (App.workspaceId || '(VAZIO)'),
+    'workspace que a API respondeu: ' + (App.workspaceDaResposta || SEM_CABECALHO),
     'modelo: ' + App.model,
     'endereço: ' + API_URL,
-    'chamadas registradas: ' + DIAG.length,
-    ''
+    'versão dos arquivos: ' + ((versao.match(/\?v=([0-9a-z]+)/) || [])[1] || '(sem marca)'),
+    'arquivos carregados: ' + (typeof CodeState !== 'undefined' ? CodeState.files.length : 0)
+      + ', analisados: ' + (typeof CodeState !== 'undefined' ? CodeState.results.length : 0),
+    'navegador: ' + navigator.userAgent,
   ].join('\n');
 
-  const linhas = DIAG.map((d, i) => {
-    const partes = [
-      '[' + (i + 1) + '] ' + d.quando,
-      '    situação: ' + (d.status === 'rede' ? 'não chegou a responder' : 'HTTP ' + d.status),
-      '    levou: ' + d.ms + ' ms',
-      '    cabeçalho anthropic-workspace-id enviado: ' + (d.mandouWorkspace || 'não'),
-      '    request-id: ' + (d.requestId || '(sem)'),
-      '    workspace da resposta: ' + (d.workspaceResposta || '(sem)')
-    ];
-    if (d.detalhe) partes.push('    a API respondeu: ' + d.detalhe);
-    if (d.erro)    partes.push('    falha: ' + d.erro);
-    return partes.join('\n');
+  if (!DIAG.length) {
+    return 'DIAGNÓSTICO — Verificador de texto IA\n' + linha
+      + '\nNenhuma chamada à API foi feita nesta sessão.\n\n' + estado;
+  }
+
+  // ── agrupa por causa: 50 linhas iguais não ajudam ninguém ──
+  const porCausa = new Map();
+  DIAG.forEach(d => {
+    const chave = d.status + ' | ' + (d.detalhe || d.erro || '');
+    if (!porCausa.has(chave)) porCausa.set(chave, {
+      status: d.status, texto: d.detalhe || d.erro || '', n: 0, etapas: new Set() });
+    const g = porCausa.get(chave);
+    g.n++;
+    g.etapas.add(d.etapa || '?');
   });
 
-  return cab + linhas.join('\n\n');
+  const falhas = [...porCausa.values()].filter(g => g.status !== 200);
+  const sucessos = DIAG.filter(d => d.status === 200).length;
+
+  // ── o veredito: a conclusão primeiro ──
+  const vereditos = [];
+  if (!falhas.length) {
+    vereditos.push('Nenhuma chamada falhou. Se algo não apareceu na tela, o problema não '
+      + 'está na API.');
+  } else {
+    falhas.forEach(g => {
+      const onde = [...g.etapas].join(', ');
+      if (/not scoped to a workspace|anthropic-workspace-id/i.test(g.texto)) {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
+          + '\nO QUÊ: a chave atende a mais de um workspace e nenhum foi informado.'
+          + '\nESTADO: campo Workspace está ' + (App.workspaceId ? 'preenchido com "'
+              + App.workspaceId + '" — então a conta pode não ter acesso a esse workspace'
+            : 'VAZIO — é isto que falta')
+          + '.\nRESOLVE: informar o ID no campo, ou — melhor — criar no Console uma chave '
+          + 'DENTRO do workspace que vai pagar. Chave assim dispensa o campo para sempre.');
+      } else if (/spend limit|usage limit|credit balance|billing/i.test(g.texto)) {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
+          + '\nO QUÊ: limite de gasto atingido. Não é problema de configuração da página.'
+          + '\nRESOLVE: console.anthropic.com → Settings → Limits.');
+      } else if (g.status === 401) {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
+          + '\nO QUÊ: a chave foi recusada — inválida, revogada ou expirada.'
+          + '\nRESOLVE: gerar uma chave nova em console.anthropic.com.');
+      } else if (g.status === 'rede') {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' tentativa[s]).'
+          + '\nO QUÊ: a requisição não chegou a receber resposta — rede, CORS ou '
+          + 'cancelamento. Detalhe: ' + g.texto
+          + '\nRESOLVE: conferir a conexão; se for CORS, a página precisa ser aberta do '
+          + 'disco ou de um servidor local, não de dentro de outra página.');
+      } else if (g.status === 'resposta ilegível') {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
+          + '\nO QUÊ: a API respondeu, mas fora do formato que a página espera. A chamada '
+          + 'foi cobrada. ' + g.texto
+          + '\nRESOLVE: tentar de novo; se repetir, é o modelo devolvendo texto em vez de '
+          + 'JSON — vale reduzir o tamanho do arquivo analisado.');
+      } else {
+        vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
+          + '\nO QUÊ: HTTP ' + g.status + ' — ' + (g.texto || 'a API não explicou')
+          + '\nRESOLVE: a mensagem acima é da própria API; ela diz o que falta.');
+      }
+    });
+  }
+
+  // ── resumo por causa ──
+  const resumo = [...porCausa.values()].map(g =>
+    '  ' + String(g.n).padStart(3) + '× ' + (g.status === 200 ? 'OK' : g.status)
+    + '  [' + [...g.etapas].join(', ') + ']'
+    + (g.texto ? '\n        ' + g.texto.slice(0, 160) : '')).join('\n');
+
+  // ── as últimas chamadas, em detalhe ──
+  const ultimas = DIAG.slice(-8).map((d, i) => [
+    '[' + (DIAG.length - Math.min(8, DIAG.length) + i + 1) + '] ' + d.quando,
+    '    etapa: ' + (d.etapa || '?') + (d.alvo ? ' — ' + d.alvo : ''),
+    '    situação: ' + (typeof d.status === 'number' ? 'HTTP ' + d.status
+      : d.status === 'rede' ? 'não chegou a responder (rede, CORS ou cancelamento)'
+      : d.status),
+    '    levou: ' + d.ms + ' ms',
+    '    cabeçalho anthropic-workspace-id enviado: ' + (d.mandouWorkspace || 'não'),
+    '    request-id: ' + (d.requestId || SEM_CABECALHO),
+    d.detalhe ? '    a API respondeu: ' + d.detalhe : '',
+    d.erro ? '    falha: ' + d.erro : ''
+  ].filter(Boolean).join('\n')).join('\n\n');
+
+  return [
+    'DIAGNÓSTICO — Verificador de texto IA',
+    'gerado em: ' + new Date().toISOString(),
+    linha,
+    'VEREDITO',
+    linha,
+    vereditos.join('\n\n'),
+    '',
+    linha,
+    'ESTADO DA PÁGINA',
+    linha,
+    estado,
+    '',
+    linha,
+    'RESUMO DAS ' + DIAG.length + ' CHAMADAS (' + sucessos + ' com sucesso)',
+    linha,
+    resumo,
+    '',
+    linha,
+    'ÚLTIMAS CHAMADAS, EM DETALHE',
+    linha,
+    ultimas,
+  ].join('\n');
 }
+
+
 
 const WORKSPACES_URL = 'https://api.anthropic.com/v1/organizations/workspaces';
 
@@ -408,6 +522,7 @@ async function callClaude(prompt, opts = {}) {
   } catch (erroDeRede) {
     // Falha antes de haver resposta: CORS, rede caída, chamada cancelada.
     registrarDiag({ status: 'rede', ms: Date.now() - comecou,
+      etapa: opts.etapa || 'chamada à API', alvo: opts.alvo || '',
       mandouWorkspace: App.workspaceId ? 'sim (' + App.workspaceId + ')' : 'não',
       erro: erroDeRede.name + ': ' + erroDeRede.message });
     throw erroDeRede;
@@ -421,6 +536,7 @@ async function callClaude(prompt, opts = {}) {
   const requestId = response.headers?.get('request-id') || '';
   const anotar = detalhe => registrarDiag({
     status: response.status, ms: Date.now() - comecou,
+    etapa: opts.etapa || 'chamada à API', alvo: opts.alvo || '',
     mandouWorkspace: App.workspaceId ? 'sim (' + App.workspaceId + ')' : 'não',
     requestId, workspaceResposta: App.workspaceDaResposta, detalhe });
 
@@ -485,7 +601,19 @@ async function callClaude(prompt, opts = {}) {
 /** Chama o Claude e devolve o JSON já interpretado. */
 async function callClaudeJSON(prompt, opts = {}) {
   const raw = await callClaude(prompt, opts);
-  return parseJSON(raw);
+  try {
+    return parseJSON(raw);
+  } catch (err) {
+    // Separar "a API recusou" de "a API respondeu algo que não dá para ler" importa: são
+    // problemas diferentes e, antes, os dois chegavam na tela com a mesma cara.
+    registrarDiag({ status: 'resposta ilegível', ms: 0,
+      etapa: opts.etapa || 'chamada à API', alvo: opts.alvo || '',
+      mandouWorkspace: App.workspaceId ? 'sim (' + App.workspaceId + ')' : 'não',
+      erro: 'a resposta veio fora do formato esperado',
+      detalhe: 'primeiros 200 caracteres: ' + String(raw).slice(0, 200) });
+    err.causa = 'resposta da API ilegível na etapa: ' + (opts.etapa || '?');
+    throw err;
+  }
 }
 
 /** Extrai JSON de uma resposta que pode vir embrulhada em markdown. */

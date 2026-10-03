@@ -289,7 +289,8 @@ function initAnalyzeButton() {
       // Varredura local primeiro: é instantânea, gratuita e não depende da API.
       const forensics = runForensics(text, { mode: 'text' });
       TextState.forensics = forensics;
-      const result = await callClaudeJSON(buildPrompt(text, forensics), { maxTokens: 1500 });
+      const result = await callClaudeJSON(buildPrompt(text, forensics),
+        { maxTokens: 1500, etapa: 'análise de texto' });
       showResults(result);
       showTraces(forensics);
     } catch (err) {
@@ -319,7 +320,7 @@ function initRewriteButton() {
       const sample = $('voice-sample').value;
       const res = await callClaudeJSON(
         buildHumanizePrompt(text, tone, TextState.forensics, sample),
-        { maxTokens: 4000 });
+        { maxTokens: 4000, etapa: 'reescrita de texto' });
 
       // Garantia final: nenhum caractere invisivel sobrevive a reescrita,
       // mesmo que o modelo tenha deixado passar.
