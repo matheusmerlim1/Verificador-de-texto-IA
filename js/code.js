@@ -755,7 +755,8 @@ function renderProjectHumanizeResult(reanalisado) {
         <input type="text" id="pz-ws-input" class="apikey-input" placeholder="wrkspc_..."
                value="${escHtml(App.workspaceId || '')}" autocomplete="off" spellcheck="false" />
         <button type="submit" class="btn btn-primary btn-sm">Salvar e tentar de novo</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-ws-listar>🔎 Buscar meus workspaces</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-ws-listar
+                title="Só funciona com chave que tenha permissão de administração">🔎 Tentar listar meus workspaces</button>
         <span class="pz-ws-aviso" data-ws-aviso></span>
         <div class="pz-ws-lista" data-ws-lista hidden></div>
       </form>` : ''}

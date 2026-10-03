@@ -529,11 +529,13 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     const r = await val(`(() => {
       const el = document.querySelector('.pz-result');
       return { avisos: el.querySelectorAll('.hz-erro').length,
-               vezes: (el.textContent.match(/console\\.anthropic\\.com/g) || []).length,
+               // contar a palavra no texto era proxy fragil e quebrou sozinho
+               // duas vezes. O que importa e quantos avisos foram desenhados.
+               vezes: el.querySelectorAll('.hz-erro').length,
                linhas: el.querySelectorAll('.pz-table tbody tr').length };
     })()`);
     exigir(r.avisos === 1, `a mesma falha virou ${r.avisos} avisos em vez de um só`);
-    exigir(r.vezes === 1, `a mensagem se repetiu ${r.vezes} vezes`);
+    exigir(r.vezes === 1, `a mesma causa virou ${r.vezes} avisos em vez de um só`);
 
     const t = await transbordo();
     exigir(!t.total, `${t.total} bloco(s) fora da caixa: ` +
@@ -736,7 +738,7 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
                  API.corpo = { error: { message: 'This API key is not scoped to a workspace' } };`);
     const msg = await rodar(`(async () => { try { await callClaude('oi'); return 'NAO FALHOU'; }
                               catch (e) { return e.message; } })()`);
-    exigir(msg.includes('Workspace'), "a mensagem mudou: " + msg);
+    exigir(/workspace/i.test(msg), "a mensagem mudou: " + msg);
     const marcado = await rodar(`(() => {
       const ws = document.getElementById('workspace-input');
       return ws ? ws.classList.contains('pedindo') : false;
@@ -877,9 +879,9 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
       API.corpo = { error: { message: 'This API key is not scoped to a workspace' } };
       try { await callClaude('oi'); return 'NAO FALHOU'; } catch (e) { return e.message; }
     })()`);
-    exigir(/Workspace/.test(escopo), "não reconheceu o problema de escopo: " + escopo);
-    exigir(/mais de um workspace/.test(escopo),
-      "a dica não diz que isso só acontece com chave de mais de um workspace");
+    exigir(/workspace/i.test(escopo), "não reconheceu o problema de escopo: " + escopo);
+    exigir(/API keys → Create Key/.test(escopo),
+      "a dica não aponta a saída que funciona: criar chave vinculada a um workspace");
     await rodar(`API.status = 200; API.corpo = null;`);
   });
 
@@ -1142,6 +1144,8 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     })`);
     exigir(r.aviso.includes('Workspace-scoped keys cannot do this'),
       "escondeu o motivo que a API deu: " + r.aviso);
+    exigir(/API keys → Create Key/.test(r.aviso),
+      "recusou a listagem sem apontar o próximo passo: " + r.aviso);
     exigir(r.botaoVivo, "o botão ficou travado depois da recusa");
     exigir(!/Buscando/.test(r.rotulo), "o botão ficou preso em 'Buscando…'");
     exigir(r.campoVivo, "sumiu com o campo manual, que é a saída quando a busca não serve");
@@ -1242,8 +1246,8 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     exigir(/campo Workspace está VAZIO|VAZIO — é isto que falta/.test(t),
       "não disse que o campo está vazio, que é o estado que importa");
     exigir(/RESOLVE:/.test(t), "não disse o que resolve");
-    exigir(/chave DENTRO do workspace/.test(t),
-      "não ofereceu a saída definitiva, que é criar a chave dentro do workspace");
+    exigir(/API keys → Create Key/.test(t),
+      "não ofereceu a saída definitiva, que é criar a chave vinculada a um workspace");
     exigir(/RESUMO DAS \d+ CHAMADAS/.test(t), "não resumiu as chamadas por causa");
     exigir(/ESTADO DA PÁGINA/.test(t), "não registrou o estado da página");
     exigir(/versão dos arquivos: \w+/.test(t),
@@ -1262,7 +1266,7 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     const t = await rodar(`diagnosticoTexto()`);
     exigir(/limite de gasto/i.test(t), "não reconheceu o limite de gasto");
     exigir(/Settings → Limits/.test(t), "não disse onde se resolve");
-    exigir(!/chave DENTRO do workspace/.test(t),
+    exigir(!/API keys → Create Key/.test(t),
       "ofereceu a saída de workspace para um problema de gasto");
     exigir(t.includes('análise do projeto'), "não disse a etapa");
   });

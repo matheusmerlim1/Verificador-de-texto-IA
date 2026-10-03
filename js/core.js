@@ -333,12 +333,18 @@ function diagnosticoTexto() {
       const onde = [...g.etapas].join(', ');
       if (/not scoped to a workspace|anthropic-workspace-id/i.test(g.texto)) {
         vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
-          + '\nO QUÊ: a chave atende a mais de um workspace e nenhum foi informado.'
+          + '\nO QUÊ: a chave não está vinculada a nenhum workspace, e a API precisa saber '
+          + 'onde gastar.'
           + '\nESTADO: campo Workspace está ' + (App.workspaceId ? 'preenchido com "'
-              + App.workspaceId + '" — então a conta pode não ter acesso a esse workspace'
-            : 'VAZIO — é isto que falta')
-          + '.\nRESOLVE: informar o ID no campo, ou — melhor — criar no Console uma chave '
-          + 'DENTRO do workspace que vai pagar. Chave assim dispensa o campo para sempre.');
+              + App.workspaceId + '" — então o valor está errado, ou a conta não tem acesso '
+              + 'a esse workspace'
+            : 'VAZIO')
+          + '.\nRESOLVE: criar uma chave nova já vinculada a um workspace em '
+          + 'console.anthropic.com → Settings → API keys → Create Key, escolhendo um '
+          + 'workspace em vez de "All workspaces". É a saída definitiva: a chave resolve '
+          + 'sozinha e nenhum campo precisa ser preenchido. A alternativa é descobrir o ID '
+          + 'do workspace e informá-lo no campo — mas o Workspace Padrão não aparece em '
+          + 'listagem nenhuma, por desenho da API.');
       } else if (/spend limit|usage limit|credit balance|billing/i.test(g.texto)) {
         vereditos.push('ONDE: ' + onde + ' (' + g.n + ' chamada[s]).'
           + '\nO QUÊ: limite de gasto atingido. Não é problema de configuração da página.'
@@ -465,9 +471,16 @@ async function listarWorkspaces() {
     detalhe: detail || 'listar workspaces: ' + (corpo?.data?.length ?? 0) + ' encontrado(s)' });
 
   if (!response.ok) {
-    throw montarErro('Não deu para listar os workspaces com esta chave. Chave limitada a '
-      + 'um workspace e chave de administração não servem aqui; nesse caso pegue o ID no '
-      + 'Console.', detail, requestId);
+    // 403 aqui é o caso comum, não uma exceção: listar workspaces exige permissão de
+    // administração, que uma chave de uso normal não tem. Dizer só "não deu" deixaria a
+    // pessoa sem o próximo passo — e o próximo passo existe.
+    const dica = response.status === 403 || response.status === 401
+      ? 'Esta chave não tem permissão para listar workspaces — é o normal para uma chave '
+        + 'de uso comum. Então o caminho é outro: crie uma chave nova já vinculada a um '
+        + 'workspace em console.anthropic.com → Settings → API keys → Create Key, '
+        + 'escolhendo um workspace em vez de "All workspaces". Ela dispensa este campo.'
+      : 'Não deu para listar os workspaces com esta chave.';
+    throw montarErro(dica, detail, requestId);
   }
   return (corpo?.data || []).filter(w => !w.archived_at);
 }
@@ -568,10 +581,12 @@ async function callClaude(prompt, opts = {}) {
         // requisição, pelo cabeçalho. Chave criada dentro de um workspace já vai
         // sozinha, e para ela preencher o campo não muda nada.
         pedirWorkspace();
-        const errWs = montarErro('Esta chave atende a mais de um workspace, então cada '
-          + 'requisição precisa dizer em qual deles gastar. Informe o ID abaixo '
-          + '(console.anthropic.com → Settings → Workspaces, começa com wrkspc_) e confirme '
-          + 'que a sua conta tem acesso a ele.', detail, requestId);
+        const errWs = montarErro('Esta chave não está vinculada a nenhum workspace, e a '
+          + 'API precisa saber onde gastar. A saída mais simples é criar uma chave nova já '
+          + 'vinculada a um workspace: console.anthropic.com → Settings → API keys → Create '
+          + 'Key, escolhendo um workspace em vez de "All workspaces". Uma chave assim '
+          + 'resolve sozinha e dispensa qualquer campo aqui. Se preferir continuar com esta '
+          + 'chave, informe abaixo o ID do workspace (começa com wrkspc_).', detail, requestId);
         errWs.precisaWorkspace = true;
         throw errWs;
       }
