@@ -153,9 +153,16 @@ function renderProjectHumanize(rep) {
         </select>
         <label class="pz-check"><input type="checkbox" id="pz-reanalyze" checked>
           reanalisar depois</label>
-        <button class="btn btn-primary" id="pz-run">✍️ Reescrever tudo</button>
+        <button class="btn btn-primary" id="pz-run"
+                title="Reescrita profunda pelo modelo: renomeia, reorganiza e reescreve. Consome crédito da API.">✍️ Reescrever com IA</button>
+        <button class="btn btn-ghost" id="pz-run-local"
+                title="Só o que dá para corrigir por regra: invisíveis, assinaturas, comentário redundante, régua decorativa, docstring de molde, espaçamento. Não usa a API.">🧹 Limpar sem IA (grátis)</button>
         <button class="btn btn-ghost btn-sm" id="pz-cancel" style="display:none">Cancelar</button>
       </div>
+      <div class="pz-nota-opcoes">Duas opções, e elas se somam: a limpeza local é
+        instantânea, não custa nada e resolve o que é mecânico; a reescrita com IA faz o
+        que exige julgamento — renomear, reorganizar, desfazer abstração. Dá para rodar a
+        limpeza primeiro e a IA depois.</div>
     </div>
     <div class="pz-progress" id="pz-progress" style="display:none">
       <div class="pz-bar"><div class="pz-bar-fill" id="pz-bar-fill"></div></div>

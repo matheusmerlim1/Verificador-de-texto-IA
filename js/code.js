@@ -581,6 +581,11 @@ const PZ = { running: false, abort: null, itens: [], interrompidoPor: null };
 
 function initProjectHumanize() {
   const raiz = $('rep-humanize');
+  const local = $('pz-run-local');
+  if (local && !local.dataset.ligado) {
+    local.dataset.ligado = '1';
+    local.addEventListener('click', runLocalHumanize);
+  }
   if (!raiz || raiz.dataset.pzLigado) return;
   raiz.dataset.pzLigado = '1';
 
@@ -620,6 +625,7 @@ async function runProjectHumanize() {
   PZ.abort = new AbortController();
   PZ.itens = [];
   PZ.interrompidoPor = null;
+  PZ.semIA = false;
   $('pz-run').disabled = true;
   show('pz-cancel', 'inline-flex');
   show('pz-progress', 'block');
@@ -711,6 +717,83 @@ async function runProjectHumanize() {
   }
 }
 
+// ════════════════════════════════════════════════
+//  REESCRITA LOCAL — sem IA, sem crédito, sem rede
+// ════════════════════════════════════════════════
+/**
+ * Aplica em todos os arquivos as correções que não precisam de modelo.
+ *
+ * Existe porque a conta pode estar sem saldo, sem rede ou sem chave, e ainda assim boa
+ * parte do que denuncia código gerado é mecânica: caractere invisível, assinatura de
+ * ferramenta, comentário que repete a linha de baixo, régua decorativa, docstring de
+ * molde, espaçamento uniforme. Nada disso exige julgamento — só regra.
+ *
+ * O "depois" aqui é sempre a medida heurística local: sem API não há reanálise, e dizer
+ * o contrário seria inventar precisão que não existe.
+ */
+async function runLocalHumanize() {
+  if (PZ.running) return;
+  const saida = $('pz-out');
+  const arquivos = CodeState.results.filter(r => !r.error);
+  if (!arquivos.length) return;
+
+  const intensidade = ($('pz-depth') || {}).value || 'padrao';
+
+  PZ.running = true;
+  PZ.abort = new AbortController();
+  PZ.itens = [];
+  PZ.interrompidoPor = null;
+  PZ.semIA = true;
+  $('pz-run').disabled = true;
+  $('pz-run-local').disabled = true;
+  show('pz-progress', 'block');
+
+  let feitos = 0;
+  try {
+    for (const analise of arquivos) {
+      const entrada = CodeState.files.find(f => f.path === analise.path);
+      if (!entrada) continue;
+
+      const item = { path: analise.path, name: entrada.name, antes: analise.score,
+                     depois: null, codigo: null, erro: null, changes: [], risk: 'nenhum' };
+      PZ.itens.push(item);
+
+      try {
+        const conteudo = await readFileText(entrada.file);
+        feitos++;
+        $('pz-bar-fill').style.width = Math.round(feitos / arquivos.length * 100) + '%';
+        $('pz-status').textContent = `Limpando ${analise.path}…`;
+
+        const res = reescritaLocal(conteudo, entrada.lang, { intensidade });
+        if (res.codigo.trim() === conteudo.trim()) {
+          item.erro = 'nada mecânico a corrigir';
+          item.causa = 'nada mecânico a corrigir';
+          continue;
+        }
+        item.codigo = res.codigo;
+        item.changes = res.mudancas.map(m => ({
+          what: m.que + (m.n > 1 ? ' (' + m.n + '×)' : ''),
+          why: 'padrão mecânico de código gerado',
+          where: m.onde.length ? 'linha ' + m.onde.join(', ') : 'o arquivo todo' }));
+
+        const h = analyzeHeuristics(item.codigo, entrada.path);
+        item.heuristicaDepois = h ? h.score : null;
+        item.depois = item.heuristicaDepois;
+        item.medidaDepois = 'heurística';
+      } catch (err) {
+        item.erro = err.message || String(err);
+        item.causa = item.erro;
+      }
+    }
+  } finally {
+    PZ.running = false;
+    $('pz-run').disabled = false;
+    $('pz-run-local').disabled = false;
+    hide('pz-progress');
+    renderProjectHumanizeResult(false);
+  }
+}
+
 /** O resumo: percentual do projeto antes e depois, e a tabela por arquivo. */
 function renderProjectHumanizeResult(reanalisado) {
   const itens = PZ.itens;
@@ -768,6 +851,15 @@ function renderProjectHumanizeResult(reanalisado) {
     grupo.arquivos.push(i.path);
     if (i.precisaWorkspace) grupo.precisaWorkspace = true;
   });
+  const avisoLocal = PZ.semIA ? `
+    <div class="hz-warn">Esta foi a limpeza <strong>local</strong>: só o que dá para
+      corrigir por regra, sem chamar a API e sem gastar crédito — caractere invisível,
+      assinatura de ferramenta, comentário que repetia o código, régua decorativa,
+      docstring de molde e espaçamento. Nada de comportamento mudou: código e strings não
+      foram tocados. O que continua precisando do modelo: renomear identificador genérico,
+      desfazer abstração desnecessária, variar estrutura repetitiva e reescrever
+      tratamento de erro cerimonial.</div>` : '';
+
   const naoTentados = itens.filter(i => i.naoTentado).length;
   const avisoParada = PZ.interrompidoPor && naoTentados ? `
     <div class="hz-warn">Parei na primeira falha: o problema é de configuração e vale igual
@@ -818,6 +910,7 @@ function renderProjectHumanizeResult(reanalisado) {
           if (rean === feitos.length) return ', com o percentual medido de novo sobre o código reescrito';
           return `, ${rean} com o percentual reanalisado e ${feitos.length - rean} só pela heurística local`;
         })()}.</div>
+      ${avisoLocal}
       ${avisoParada}
       ${blocoFalhas}
       ${risco.length ? `<div class="hz-erro">${risco.length} arquivo(s) com risco declarado de

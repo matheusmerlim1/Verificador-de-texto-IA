@@ -1467,6 +1467,150 @@ const ERRO_WS = 'Esta chave é da organização e não de um workspace: preencha
     await rodar(`API.status = 200; API.corpo = null;`);
   });
 
+
+  // ─────────────────────────────────────────────────────────────
+  //  29. Reescrita local: sem IA, sem crédito, sem rede
+  // ─────────────────────────────────────────────────────────────
+  await cenario("a limpeza local não chama a API nenhuma vez", async () => {
+    await abrir();
+    await rodar(`document.querySelector('.tab[data-mode="code"]').click();
+                 App.apiKey = '';`);
+    await soltarArquivos(CAMINHOS.slice(0, 4),
+      ["/**", " * Processa os dados.", " * @param {Object} data Os dados.",
+       " * @returns {Object} O resultado.", " */",
+       "// ================================",
+       "function processData(data) {",
+       "  // retorna o resultado   ",
+       "  const result = data;",
+       "  return result;",
+       "}",
+       "",
+       "",
+       "",
+       "// Co-Authored-By: Claude <noreply@anthropic.com>"].join(String.fromCharCode(10)));
+    await rodar(`document.getElementById('btn-analyze-code').click()`);
+    exigir(await esperarPor(`document.querySelectorAll('#rep-table tbody tr').length >= 4`, 90),
+      "sem relatório");
+
+    exigir(await rodar(`!!document.getElementById('pz-run-local')`),
+      "o botão de limpeza local não apareceu");
+    exigir(await rodar(`!!document.getElementById('pz-run')`),
+      "o botão de reescrita com IA sumiu — as duas opções têm que conviver");
+
+    await rodar(`API.chamadas = []; document.getElementById('pz-run-local').click()`);
+    exigir(await esperarPor(`document.querySelector('.pz-result')`, 90), "não terminou");
+
+    const r = await val(`(() => {
+      const el = document.querySelector('.pz-result');
+      const n = [...el.querySelectorAll('.pz-score b')].map(b => parseInt(b.textContent));
+      return { chamadas: API.chamadas.length, antes: n[0], depois: n[1],
+               linhas: el.querySelectorAll('.pz-table tbody tr').length,
+               avisoLocal: /limpeza <?strong>?local|limpeza local/i.test(el.innerHTML),
+               zip: !!el.querySelector('#pz-zip') };
+    })()`);
+    exigir(r.chamadas === 0,
+      `a limpeza local gastou ${r.chamadas} chamadas — ela existe justamente para não gastar`);
+    exigir(r.linhas === 4, `a tabela ficou com ${r.linhas} linhas`);
+    exigir(Number.isFinite(r.depois), "o depois ficou sem número");
+    exigir(r.depois < r.antes,
+      `a limpeza não baixou o percentual: ${r.antes}% → ${r.depois}%`);
+    exigir(r.avisoLocal, "não avisou que foi a limpeza local, e não a reescrita com IA");
+    exigir(r.zip, "não ofereceu o zip do resultado");
+  });
+
+  await cenario("a limpeza não muda uma linha de código nem o conteúdo de string", async () => {
+    const r = await val(`(() => {
+      const fonte = [
+        '/**',
+        ' * Processa os dados.',
+        ' * @param {Object} data Os dados.',
+        ' */',
+        '// ==============================',
+        'function f(data) {',
+        '  const msg = "traço — e aspas “curvas” ficam, é string";',
+        '  const result = data + 1;   ',
+        '  // retorna o resultado',
+        '  return result;',
+        '}',
+        '',
+        '',
+        '',
+        '// Co-Authored-By: Claude <noreply@anthropic.com>'
+      ].join(String.fromCharCode(10));
+      const r = reescritaLocal(fonte, 'javascript', {});
+      // só as linhas que são código, na ordem, sem espaço no fim
+      // Sem regex: num template literal \\s e \\/ perdem a barra antes de chegar à
+      // página, e o padrão chega quebrado. Comparar com startsWith não tem esse risco.
+      const ehComentario = l => {
+        const t = l.trim();
+        return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
+      };
+      const semEspacoAtras = l => {
+        let f = l.length;
+        while (f > 0 && (l[f - 1] === ' ' || l[f - 1] === String.fromCharCode(9))) f--;
+        return l.slice(0, f);
+      };
+      const soCodigo = t => t.split(String.fromCharCode(10))
+        .map(semEspacoAtras)
+        .filter(l => l.trim() && !ehComentario(l));
+      return { antes: soCodigo(fonte), depois: soCodigo(r.codigo),
+               codigo: r.codigo, mudancas: r.mudancas.map(m => m.que) };
+    })()`);
+    exigir(JSON.stringify(r.antes) === JSON.stringify(r.depois),
+      'o código executável mudou:\\n      antes: ' + JSON.stringify(r.antes)
+      + '\\n      depois: ' + JSON.stringify(r.depois));
+    exigir(r.codigo.includes('traço — e aspas “curvas” ficam'),
+      'mexeu no conteúdo de uma string — isso muda o que o programa faz');
+    exigir(!/Co-Authored-By/.test(r.codigo), 'deixou a assinatura da ferramenta');
+    exigir(!/={10,}/.test(r.codigo), 'deixou a régua decorativa');
+    exigir(!/retorna o resultado/.test(r.codigo),
+      'deixou o comentário que só repetia a linha de baixo');
+    exigir(!/@param \{Object\} data Os dados/.test(r.codigo),
+      'deixou a docstring de molde');
+    exigir(!/\n\n\n/.test(r.codigo), 'deixou três linhas em branco seguidas');
+    exigir(r.mudancas.length >= 4,
+      'listou só ' + r.mudancas.length + ' mudanças: ' + r.mudancas.join(' | '));
+  });
+
+  await cenario("comentário que explica de verdade é preservado", async () => {
+    const r = await rodar(`reescritaLocal([
+      'function preco(p) {',
+      '  // a faixa de 0,9 veio da negociação de 2024, não é arredondamento',
+      '  return p * 0.9;',
+      '}'
+    ].join(String.fromCharCode(10)), 'javascript', {}).codigo`);
+    exigir(/negociação de 2024/.test(r),
+      'apagou um comentário que explicava o porquê — é justamente o que marca autoria humana');
+  });
+
+  await cenario("caractere invisível some, inclusive dentro de string", async () => {
+    const r = await val(`(() => {
+      const fonte = 'const a = 1;' + String.fromCharCode(0x200B) + String.fromCharCode(10)
+        + 'const b = 2;';
+      const out = reescritaLocal(fonte, 'javascript', {});
+      return { tem: /\u200B/.test(out.codigo), mudancas: out.mudancas.map(m => m.que) };
+    })()`);
+    exigir(!r.tem, 'sobrou caractere invisível');
+    exigir(r.mudancas.some(m => /invisível|largura zero/i.test(m)),
+      'não registrou a remoção: ' + r.mudancas.join(' | '));
+  });
+
+  await cenario("arquivo já limpo é marcado, não reescrito à toa", async () => {
+    const r = await val(`(() => {
+      const fonte = ['function preco(p) {', '  return p * 0.9;', '}'].join(String.fromCharCode(10));
+      const out = reescritaLocal(fonte, 'javascript', {});
+      return { mudancas: out.mudancas.length, igual: out.codigo.trim() === fonte.trim() };
+    })()`);
+    exigir(r.igual, 'mexeu num arquivo que não tinha nada mecânico a corrigir');
+    exigir(r.mudancas === 0, 'inventou ' + r.mudancas + ' mudanças onde não havia nada');
+  });
+
+  await cenario("a limpeza diz o que ficou para o modelo", async () => {
+    const r = await rodar(`reescritaLocal('const a = 1;', 'javascript', {}).naoFeito.join(' | ')`);
+    exigir(/renomear/i.test(r), 'não avisou que renomear continua com o modelo');
+    exigir(/abstração/i.test(r), 'não avisou sobre abstração desnecessária');
+  });
+
   ws.close(); chrome.kill();
   console.log(`cenários: ${ok.length} passaram, ${falhas.length} falharam`);
   ok.forEach(x => console.log("  ✓", x));
