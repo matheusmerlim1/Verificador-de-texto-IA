@@ -84,18 +84,21 @@ function fmtBytes(n) {
 // ════════════════════════════════════════════════
 //  ESCALAS DE COR E VEREDITO
 // ════════════════════════════════════════════════
+// As cores também pintam texto (percentual, veredito, selos), então são os tons
+// escurecidos: o verde #27ae60 e o laranja #e67e22 davam 2,9:1 sobre branco. Estes
+// passam de 4,5:1 sobre branco e sobre --surface2 (ver --*-texto no style.css).
 function getColor(score) {
-  if (score <= 30) return '#27ae60';
-  if (score <= 55) return '#e67e22';
-  return '#c0392b';
+  if (score <= 30) return '#1b7340';
+  if (score <= 55) return '#a14d0c';
+  return '#b0352a';
 }
 
 function getVerdict(score) {
-  if (score <= 20) return { label: 'PROVAVELMENTE HUMANO', color: '#27ae60' };
-  if (score <= 40) return { label: 'INDICADORES HUMANOS',  color: '#2ecc71' };
-  if (score <= 60) return { label: 'INCONCLUSIVO',         color: '#e67e22' };
-  if (score <= 80) return { label: 'INDICADORES DE IA',    color: '#e67e22' };
-  return              { label: 'PROVAVELMENTE IA',         color: '#c0392b' };
+  if (score <= 20) return { label: 'PROVAVELMENTE HUMANO', color: '#1b7340' };
+  if (score <= 40) return { label: 'INDICADORES HUMANOS',  color: '#1e7a45' };
+  if (score <= 60) return { label: 'INCONCLUSIVO',         color: '#a14d0c' };
+  if (score <= 80) return { label: 'INDICADORES DE IA',    color: '#a14d0c' };
+  return              { label: 'PROVAVELMENTE IA',         color: '#b0352a' };
 }
 
 // ════════════════════════════════════════════════
@@ -707,9 +710,14 @@ function initTabs() {
   $$('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       const target = tab.dataset.mode;
-      $$('.tab').forEach(t => t.classList.toggle('active', t === tab));
+      $$('.tab').forEach(t => {
+        t.classList.toggle('active', t === tab);
+        t.setAttribute('aria-pressed', t === tab ? 'true' : 'false');
+      });
+      // hidden além da classe: o painel fora de uso some também para o leitor de tela
       $$('.mode-panel').forEach(p => {
         p.classList.toggle('active', p.dataset.mode === target);
+        p.hidden = p.dataset.mode !== target;
       });
     });
   });

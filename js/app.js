@@ -97,7 +97,7 @@ function showLoading(msg = 'ANALISANDO PADRÕES LINGUÍSTICOS...') {
 
 function showError(msg) {
   showLoading('');
-  $('loading-msg').innerHTML = `<span style="color:var(--accent)">❌ ${escHtml(msg)}</span>`;
+  $('loading-msg').innerHTML = `<span style="color:var(--accent-texto)">❌ ${escHtml(msg)}</span>`;
 }
 
 function showResults(data) {
@@ -119,7 +119,7 @@ function showResults(data) {
   if (TextState.lastScore !== null && TextState.lastScore !== score) {
     const d = score - TextState.lastScore;
     delta.textContent = `${d > 0 ? '▲' : '▼'} ${Math.abs(d)} pontos em relação à análise anterior (${TextState.lastScore}%)`;
-    delta.style.color = d < 0 ? 'var(--green)' : 'var(--accent)';
+    delta.style.color = d < 0 ? 'var(--green-texto)' : 'var(--accent-texto)';
     delta.style.display = 'block';
   } else {
     delta.style.display = 'none';

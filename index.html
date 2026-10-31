@@ -12,9 +12,12 @@
   />
 
   <!-- Estilos -->
-  <link rel="stylesheet" href="css/style.css?v=20261025a" />
+  <link rel="stylesheet" href="css/style.css?v=20261028" />
 </head>
 <body>
+
+<!-- abas e barra da chave vêm antes do conteúdo: quem navega por teclado pula direto -->
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
 
 <!-- ══════════════════════════════════
      HEADER
@@ -22,7 +25,7 @@
 <header>
   <div>
     <div class="header-sub">Ferramenta de Análise</div>
-    <div class="header-title">Detector de Autoria por IA</div>
+    <h1 class="header-title">Detector de Autoria por IA</h1>
   </div>
   <div class="header-badge">POWERED BY CLAUDE · ANTHROPIC</div>
 </header>
@@ -30,16 +33,16 @@
 <!-- ══════════════════════════════════
      ABAS DE MODO
      ══════════════════════════════════ -->
-<nav class="tabs">
-  <button class="tab active" data-mode="text">📝 Texto</button>
-  <button class="tab" data-mode="code">📁 Projeto de código</button>
+<nav class="tabs" aria-label="Modo de análise">
+  <button class="tab active" data-mode="text" aria-pressed="true" aria-controls="painel-texto"><span aria-hidden="true">📝</span> Texto</button>
+  <button class="tab" data-mode="code" aria-pressed="false" aria-controls="painel-codigo"><span aria-hidden="true">📁</span> Projeto de código</button>
 </nav>
 
 <!-- ══════════════════════════════════
      BARRA DE API KEY
      ══════════════════════════════════ -->
-<div class="apikey-bar">
-  <span class="apikey-label">🔑 Chave API</span>
+<section class="apikey-bar" aria-label="Chave da API">
+  <label class="apikey-label" for="api-key-input"><span aria-hidden="true">🔑</span> Chave API</label>
   <input
     id="api-key-input"
     class="apikey-input"
@@ -48,12 +51,13 @@
     autocomplete="off"
     spellcheck="false"
   />
-  <span class="apikey-badge idle" id="api-key-badge">Aguardando chave</span>
-  <select id="model-select" class="model-select" title="Modelo usado na análise"></select>
+  <span class="apikey-badge idle" id="api-key-badge" role="status">Aguardando chave</span>
+  <select id="model-select" class="model-select" title="Modelo usado na análise" aria-label="Modelo usado na análise"></select>
   <input
     id="workspace-input"
     class="apikey-input apikey-input--ws"
     type="text"
+    aria-label="Workspace (só para chave da organização)"
     placeholder="Workspace (só p/ chave da organização)"
     title="ID do workspace, em console.anthropic.com → Settings → Workspaces. Começa com wrkspc_. Deixe vazio se a sua chave já pertence a um workspace."
     autocomplete="off"
@@ -62,22 +66,25 @@
   <span class="apikey-hint">
     Obtenha em
     <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">
-      console.anthropic.com
+      console.anthropic.com<span class="sr-only"> (abre em nova aba)</span>
     </a>
     &nbsp;·&nbsp; Salva só no seu navegador
   </span>
-</div>
+</section>
+
+<!-- Um só <main>; cada modo é uma <section> dentro dele, e a aba fora de uso fica hidden -->
+<main id="conteudo" tabindex="-1">
 
 <!-- ══════════════════════════════════════════════════════════
      MODO 1 — TEXTO
      ══════════════════════════════════════════════════════════ -->
-<main class="mode-panel active" data-mode="text">
+<section class="mode-panel active" data-mode="text" id="painel-texto" aria-label="Análise de texto">
 
   <!-- ── Coluna esquerda: input ── -->
   <div class="input-side">
 
     <div>
-      <div class="field-label">Texto para análise</div>
+      <label class="field-label" for="txt">Texto para análise</label>
       <textarea
         id="txt"
         placeholder="Cole aqui o texto que deseja analisar. Recomendado: mínimo 100 palavras para maior precisão na análise..."
@@ -93,12 +100,12 @@
     </div>
 
     <div>
-      <div class="field-label">Exemplos rápidos</div>
-      <div class="examples">
-        <div class="example-chip" data-id="human">✍️ Texto humano</div>
-        <div class="example-chip" data-id="ai">🤖 Texto de IA</div>
-        <div class="example-chip" data-id="academic">📄 Acadêmico</div>
-        <div class="example-chip" data-id="mixed">🔀 Misto</div>
+      <div class="field-label" id="rot-exemplos">Exemplos rápidos</div>
+      <div class="examples" role="group" aria-labelledby="rot-exemplos">
+        <button type="button" class="example-chip" data-id="human"><span aria-hidden="true">✍️</span> Texto humano</button>
+        <button type="button" class="example-chip" data-id="ai"><span aria-hidden="true">🤖</span> Texto de IA</button>
+        <button type="button" class="example-chip" data-id="academic"><span aria-hidden="true">📄</span> Acadêmico</button>
+        <button type="button" class="example-chip" data-id="mixed"><span aria-hidden="true">🔀</span> Misto</button>
       </div>
     </div>
 
@@ -114,8 +121,8 @@
   <div class="result-side">
 
     <div class="empty-state" id="empty-state">
-      <div class="empty-icon">🔬</div>
-      <div class="empty-title">Nenhum texto analisado</div>
+      <div class="empty-icon" aria-hidden="true">🔬</div>
+      <h2 class="empty-title">Nenhum texto analisado</h2>
       <div class="empty-sub">
         Insira sua chave API, cole um texto e clique em "Analisar".
       </div>
@@ -127,7 +134,7 @@
         <div class="loading-dot"></div>
         <div class="loading-dot"></div>
       </div>
-      <div class="loading-text" id="loading-msg">
+      <div class="loading-text" id="loading-msg" role="status">
         ANALISANDO PADRÕES LINGUÍSTICOS...
       </div>
     </div>
@@ -166,7 +173,7 @@
 
     <!-- Ações de reescrita -->
     <div class="text-actions" id="text-actions">
-      <select id="rewrite-tone" class="tone-select" title="Registro da reescrita">
+      <select id="rewrite-tone" class="tone-select" title="Registro da reescrita" aria-label="Registro da reescrita">
         <option value="manter">Manter o registro original</option>
         <option value="academico">Acadêmico com voz autoral</option>
         <option value="neutro">Profissional direto</option>
@@ -175,7 +182,7 @@
       <button class="btn btn-primary" id="btn-rewrite">✍️ Reescrever para reduzir IA</button>
       <details class="voice-wrap">
         <summary>Amostra da sua escrita (opcional)</summary>
-        <textarea id="voice-sample" class="voice-sample" placeholder="Cole aqui um trecho que você escreveu. A reescrita imita o seu ritmo, vocabulário e pontuação — e a amostra tem precedência sobre as regras gerais."></textarea>
+        <textarea id="voice-sample" class="voice-sample" aria-label="Amostra da sua escrita" placeholder="Cole aqui um trecho que você escreveu. A reescrita imita o seu ritmo, vocabulário e pontuação — e a amostra tem precedência sobre as regras gerais."></textarea>
       </details>
     </div>
 
@@ -199,12 +206,12 @@
 
   </div><!-- /result-side -->
 
-</main>
+</section>
 
 <!-- ══════════════════════════════════════════════════════════
      MODO 2 — PROJETO DE CÓDIGO
      ══════════════════════════════════════════════════════════ -->
-<main class="mode-panel" data-mode="code">
+<section class="mode-panel" data-mode="code" id="painel-codigo" aria-label="Análise de projeto de código" hidden>
 
   <!-- ── Coluna esquerda: entrada de arquivos ── -->
   <div class="input-side">
@@ -213,7 +220,7 @@
       <div class="field-label">Pasta do projeto</div>
 
       <div class="code-drop" id="code-drop">
-        <div class="drop-icon">📂</div>
+        <div class="drop-icon" aria-hidden="true">📂</div>
         <div class="drop-title">Arraste a pasta do projeto aqui</div>
         <div class="drop-sub">ou selecione manualmente</div>
         <div class="drop-buttons">
@@ -236,9 +243,9 @@
       <div class="file-panel-head">
         <div class="field-label" style="margin:0">Arquivos</div>
         <div class="file-panel-actions">
-          <button class="link-btn" id="sel-all">todos</button>
-          <span class="muted">·</span>
-          <button class="link-btn" id="sel-none">nenhum</button>
+          <button class="link-btn" id="sel-all" aria-label="Marcar todos os arquivos">todos</button>
+          <span class="muted" aria-hidden="true">·</span>
+          <button class="link-btn" id="sel-none" aria-label="Desmarcar todos: nenhum arquivo">nenhum</button>
         </div>
       </div>
       <div class="file-summary" id="file-summary"></div>
@@ -251,7 +258,7 @@
       <button class="btn btn-primary" id="btn-analyze-code" disabled>📊 Analisar projeto</button>
     </div>
 
-    <div class="mode-note" id="code-mode-note"></div>
+    <div class="mode-note" id="code-mode-note" role="status"></div>
 
     <div class="disclaimer">
       ⚠️ A estimativa combina análise estática local com avaliação semântica por IA.
@@ -266,8 +273,8 @@
   <div class="result-side">
 
     <div class="empty-state" id="code-empty">
-      <div class="empty-icon">📊</div>
-      <div class="empty-title">Nenhum projeto analisado</div>
+      <div class="empty-icon" aria-hidden="true">📊</div>
+      <h2 class="empty-title">Nenhum projeto analisado</h2>
       <div class="empty-sub">
         Selecione a pasta do projeto e clique em "Analisar" para gerar o relatório
         com o percentual por documento.
@@ -329,7 +336,8 @@
       <!-- Tabela por documento -->
       <div class="rep-section">
         <div class="ind-label">Percentual por documento</div>
-        <div id="rep-table"></div>
+        <!-- rola de lado em tela estreita: tabindex para dar para rolar pelo teclado (2.1.1) -->
+        <div id="rep-table" tabindex="0" role="region" aria-label="Percentual por documento"></div>
       </div>
 
       <!-- Sugestões do projeto -->
@@ -359,31 +367,35 @@
 
   </div><!-- /result-side -->
 
+</section>
+
 </main>
 
 <!-- Scripts -->
 <script src="config.js?v=20261004a"></script>
 <script src="vendor/avoid-ai-writing/patterns.js?v=20261004a"></script>
-<script src="js/core.js?v=20261004a"></script>
+<script src="js/core.js?v=20261028"></script>
 <script src="js/forensics.js?v=20261004a"></script>
 <script src="js/humanizer.js?v=20261004a"></script>
 <script src="js/humanizer-code.js?v=20261004a"></script>
 <script src="js/humanizer-local.js?v=20261004a"></script>
 <script src="js/zip.js?v=20261004a"></script>
 <script src="js/heuristics.js?v=20261004a"></script>
-<script src="js/app.js?v=20261004a"></script>
+<script src="js/app.js?v=20261028"></script>
 <script src="js/code.js?v=20261004a"></script>
-<script src="js/report.js?v=20261004a"></script>
+<script src="js/report.js?v=20261028"></script>
 
 <!-- === Botao de volta ao portfolio - cole antes do fim do body === -->
+<nav aria-label="Portf&oacute;lio">
 <a id="mr-portfolio-btn" href="https://matheusmerlim1.github.io/" target="_blank" rel="noopener"
-   aria-label="Abrir o portf&oacute;lio de Matheus Raposo" title="Ver todos os meus projetos">
+   aria-label="Portf&oacute;lio de Matheus Raposo (abre em nova aba)" title="Ver todos os meus projetos">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>
   </svg>
   <span>Portf&oacute;lio</span>
 </a>
+</nav>
 <style>
 #mr-portfolio-btn {
   position: fixed; top: 12px; right: 12px; z-index: 2147483000;

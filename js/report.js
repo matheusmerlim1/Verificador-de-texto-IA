@@ -50,9 +50,9 @@ function renderDistribution(rep) {
   const { human, mixed, ai } = rep.buckets;
   const n = rep.files.length || 1;
   const rows = [
-    { label: 'Predominantemente humano', hint: '0–40%',   n: human, color: '#27ae60' },
-    { label: 'Misto / inconclusivo',     hint: '41–65%',  n: mixed, color: '#e67e22' },
-    { label: 'Predominantemente IA',     hint: '66–100%', n: ai,    color: '#c0392b' },
+    { label: 'Predominantemente humano', hint: '0–40%',   n: human, color: '#1b7340' },
+    { label: 'Misto / inconclusivo',     hint: '41–65%',  n: mixed, color: '#a14d0c' },
+    { label: 'Predominantemente IA',     hint: '66–100%', n: ai,    color: '#b0352a' },
   ];
 
   $('rep-dist').innerHTML = rows.map(r => `
@@ -146,7 +146,7 @@ function renderProjectHumanize(rep) {
           por arquivo (${n * 2} no total).</div>
       </div>
       <div class="pz-controls">
-        <select id="pz-depth" class="hz-depth" title="O quanto a reescrita pode mexer">
+        <select id="pz-depth" class="hz-depth" title="O quanto a reescrita pode mexer" aria-label="O quanto a reescrita pode mexer">
           <option value="conservadora">conservadora — só comentários e nomes locais</option>
           <option value="padrao" selected>padrão — inclui organização interna e tratamento de erro</option>
           <option value="profunda">profunda — inclui desfazer abstração prematura</option>
@@ -251,7 +251,7 @@ function renderFileDetails(rep) {
           <div class="det-block det-humanize">
             <div class="det-block-title">Reescrever este arquivo</div>
             <div class="hz-controls">
-              <select class="hz-depth" data-hz-depth="${escHtml(f.path)}" title="O quanto a reescrita pode mexer">
+              <select class="hz-depth" data-hz-depth="${escHtml(f.path)}" title="O quanto a reescrita pode mexer" aria-label="O quanto a reescrita pode mexer">
                 <option value="conservadora">conservadora — comentários e nomes locais</option>
                 <option value="padrao" selected>padrão — inclui organização e tratamento de erro</option>
                 <option value="profunda">profunda — pode desfazer abstração prematura</option>
